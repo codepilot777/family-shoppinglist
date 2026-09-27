@@ -1,0 +1,22 @@
+{
+  "name": "family-shoppinglist",
+  "version": "1.0.0",
+  "description": "屋企人共用購物清單",
+  "scripts": {
+    "vendor": "esbuild scripts/firebase-entry.js --bundle --format=esm --minify --outfile=public/vendor/firebase.js",
+    "serve": "npx --yes serve public -l 8080"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codepilot777/family-shoppinglist.git"
+  },
+  "bugs": {
+    "url": "https://github.com/codepilot777/family-shoppinglist/issues"
+  },
+  "homepage": "https://github.com/codepilot777/family-shoppinglist#readme",
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "firebase": "^12.19.0"
+  },
+  "private": true
+}

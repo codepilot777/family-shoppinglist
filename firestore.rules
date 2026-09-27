@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// 每個家庭用一個隨機代碼做 ID，只有知道代碼（即係收到邀請連結）嘅人先讀寫到。
+// 所有人都要先匿名登入；冇人可以列出全部家庭。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function familyExists(familyId) {
+      return exists(/databases/$(database)/documents/families/$(familyId));
+    }
+    function shortString(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    match /families/{familyId} {
+      allow get: if signedIn();
+      allow create, update: if signedIn()
+        && familyId.size() >= 16
+        && request.resource.data.keys().hasOnly(['name', 'createdAt'])
+        && shortString(request.resource.data.name, 30)
+        && request.resource.data.name.size() > 0;
+      // 唔准 list（避免有人列出所有家庭）同 delete
+    }
+
+    match /families/{familyId}/lists/{listId} {
+      allow read, delete: if signedIn();
+      allow create, update: if signedIn()
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['name', 'createdAt'])
+        && shortString(request.resource.data.name, 30)
+        && request.resource.data.name.size() > 0;
+    }
+
+    match /families/{familyId}/items/{itemId} {
+      allow read, delete: if signedIn();
+      allow create, update: if signedIn()
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(
+             ['listId', 'name', 'qty', 'note', 'category', 'addedBy', 'done', 'doneBy', 'doneAt', 'createdAt'])
+        && shortString(request.resource.data.listId, 40)
+        && shortString(request.resource.data.name, 60)
+        && request.resource.data.name.size() > 0
+        && shortString(request.resource.data.qty, 12)
+        && shortString(request.resource.data.note, 100)
+        && shortString(request.resource.data.category, 20)
+        && shortString(request.resource.data.addedBy, 20)
+        && request.resource.data.done is bool;
+    }
+  }
+}
