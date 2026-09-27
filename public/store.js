@@ -7,6 +7,9 @@ export function randomId(len = 20) {
   return Array.from(bytes, (b) => ID_CHARS[b % ID_CHARS.length]).join('');
 }
 
+// Firestore doc ID 唔可以有「/」，亦唔可以係「.」「..」
+const dictId = (key) => encodeURIComponent(String(key).trim().toLowerCase()).slice(0, 400).replace(/^\.*$/, (m) => `_${m}`);
+
 export const isConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 
 export async function createStore() {
@@ -39,6 +42,7 @@ async function createFirebaseStore() {
   const familyRef = (fid) => fb.doc(db, 'families', fid);
   const listsCol = (fid) => fb.collection(db, 'families', fid, 'lists');
   const itemsCol = (fid) => fb.collection(db, 'families', fid, 'items');
+  const dictCol = (fid) => fb.collection(db, 'families', fid, 'dict');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -105,6 +109,19 @@ async function createFirebaseStore() {
 
     deleteItem(fid, iid) {
       return fb.deleteDoc(fb.doc(itemsCol(fid), iid));
+    },
+
+    // 用 dotted path，兩個唔同語言嘅人同時翻譯都唔會覆蓋對方
+    setTranslation(fid, iid, lang, text, auto) {
+      return fb.updateDoc(fb.doc(itemsCol(fid), iid), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
+    },
+
+    subscribeDict(fid, cb) {
+      return fb.onSnapshot(dictCol(fid), (snap) => cb(snap.docs.map((d) => d.data())), () => cb([]));
+    },
+
+    saveDictEntry(fid, key, entry) {
+      return fb.setDoc(fb.doc(dictCol(fid), dictId(key)), entry);
     },
 
     async clearDone(fid, lid) {
@@ -215,6 +232,24 @@ function createLocalStore() {
 
     async deleteItem(fid, iid) {
       delete fam(fid).items[iid];
+      save();
+    },
+
+    async setTranslation(fid, iid, lang, text, auto) {
+      const it = fam(fid).items[iid];
+      if (!it) return;
+      it.tr = { ...it.tr, [lang]: text };
+      it.trAuto = { ...it.trAuto, [lang]: auto };
+      save();
+    },
+
+    subscribeDict(fid, cb) {
+      return watch(() => cb(Object.values(fam(fid)?.dict || {})));
+    },
+
+    async saveDictEntry(fid, key, entry) {
+      const f = fam(fid);
+      f.dict = { ...f.dict, [dictId(key)]: entry };
       save();
     },
 

@@ -39,7 +39,7 @@ service cloud.firestore {
       allow create, update: if signedIn()
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(
-             ['listId', 'name', 'qty', 'note', 'category', 'addedBy', 'done', 'doneBy', 'doneAt', 'createdAt'])
+             ['listId', 'name', 'lang', 'tr', 'trAuto', 'qty', 'note', 'category', 'addedBy', 'done', 'doneBy', 'doneAt', 'createdAt'])
         && shortString(request.resource.data.listId, 40)
         && shortString(request.resource.data.name, 60)
         && request.resource.data.name.size() > 0
@@ -47,7 +47,22 @@ service cloud.firestore {
         && shortString(request.resource.data.note, 100)
         && shortString(request.resource.data.category, 20)
         && shortString(request.resource.data.addedBy, 20)
-        && request.resource.data.done is bool;
+        && request.resource.data.done is bool
+        && request.resource.data.get('tr', {}) is map
+        && request.resource.data.get('tr', {}).size() <= 3
+        && request.resource.data.get('trAuto', {}) is map;
+    }
+
+    // 家庭字典：屋企人改過嘅翻譯，下次自動用
+    match /families/{familyId}/dict/{entryId} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['zh', 'en', 'id', 'cat'])
+        && shortString(request.resource.data.get('zh', ''), 60)
+        && shortString(request.resource.data.get('en', ''), 60)
+        && shortString(request.resource.data.get('id', ''), 60)
+        && shortString(request.resource.data.get('cat', ''), 20);
     }
   }
 }
