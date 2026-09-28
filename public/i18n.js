@@ -11,8 +11,8 @@ export const CATEGORY_ICONS = { veg: '🥬', meat: '🥩', dairy: '🥛', staple
 
 const STRINGS = {
   zh: {
-    appName: '屋企購物清單',
-    tagline: '一家人一齊加、一齊剔，即時同步',
+    appName: '屋企通',
+    tagline: '買嘢、食飯、菜單，一家人即時同步',
     loading: '載入中…',
     demoNote: '⚠️ 示範模式：未設定 Firebase，資料只會存喺呢部裝置，唔會同步俾屋企人。設定方法睇 README。',
     language: '語言',
@@ -86,7 +86,7 @@ const STRINGS = {
     inviteDemo: '示範模式唔會同步。要設定 Firebase 之後，屋企人先可以一齊用。',
     inviteCode: '或者叫佢哋喺「加入家庭」度輸入代碼：',
     homeScreenTip: '📱 提示：喺手機瀏覽器揀「加至主畫面」，用起上嚟就好似一個 app。',
-    shareMessage: '一齊用「{name}」購物清單啦！',
+    shareMessage: '一齊用「{name}」嘅屋企通啦！',
     copied: '已複製連結',
     copyFailed: '複製唔到，請手動複製',
     yourNameShort: '你嘅名',
@@ -257,8 +257,8 @@ const STRINGS = {
   },
 
   en: {
-    appName: 'Family Shopping List',
-    tagline: 'Add and tick off items together, synced instantly',
+    appName: 'Home Hub',
+    tagline: 'Shopping, dinners and menus — synced for the whole family',
     loading: 'Loading…',
     demoNote: '⚠️ Demo mode: Firebase is not set up, so data stays on this device only and is not shared. See the README.',
     language: 'Language',
@@ -332,7 +332,7 @@ const STRINGS = {
     inviteDemo: 'Demo mode does not sync. Set up Firebase so your family can use it together.',
     inviteCode: 'Or they can enter this code under “Join your family”:',
     homeScreenTip: '📱 Tip: choose “Add to Home Screen” in your phone’s browser to use it like an app.',
-    shareMessage: 'Join our "{name}" shopping list!',
+    shareMessage: 'Join "{name}" on Home Hub!',
     copied: 'Link copied',
     copyFailed: 'Couldn’t copy, please copy it manually',
     yourNameShort: 'Your name',
@@ -503,8 +503,8 @@ const STRINGS = {
   },
 
   id: {
-    appName: 'Daftar Belanja Keluarga',
-    tagline: 'Tambah dan centang belanjaan bersama, langsung tersinkron',
+    appName: 'Rumah Kita',
+    tagline: 'Belanja, makan malam, dan menu — tersinkron untuk sekeluarga',
     loading: 'Memuat…',
     demoNote: '⚠️ Mode demo: Firebase belum diatur, data hanya tersimpan di HP ini dan tidak dibagikan.',
     language: 'Bahasa',
@@ -578,7 +578,7 @@ const STRINGS = {
     inviteDemo: 'Mode demo tidak tersinkron. Atur Firebase dulu supaya keluarga bisa memakai bersama.',
     inviteCode: 'Atau masukkan kode ini di “Gabung ke keluarga”:',
     homeScreenTip: '📱 Tips: pilih “Tambahkan ke Layar Utama” di browser HP supaya bisa dipakai seperti aplikasi.',
-    shareMessage: 'Ayo pakai daftar belanja "{name}"!',
+    shareMessage: 'Ayo gabung "{name}" di Rumah Kita!',
     copied: 'Link disalin',
     copyFailed: 'Gagal menyalin, salin manual ya',
     yourNameShort: 'Nama kamu',
