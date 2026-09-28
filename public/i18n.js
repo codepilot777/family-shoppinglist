@@ -1,9 +1,9 @@
 // 介面文字。每部機自己揀語言（例如老人家用中文，姐姐用印尼文）。
 
 export const LANGS = [
-  { id: 'zh', label: '中文', htmlLang: 'zh-Hant-HK', speech: 'yue-Hant-HK' },
-  { id: 'en', label: 'English', htmlLang: 'en', speech: 'en-US' },
-  { id: 'id', label: 'Bahasa Indonesia', htmlLang: 'id', speech: 'id-ID' },
+  { id: 'zh', label: '中文', htmlLang: 'zh-Hant-HK', speech: ['yue-Hant-HK', 'zh-HK'] },
+  { id: 'en', label: 'English', htmlLang: 'en', speech: ['en-US'] },
+  { id: 'id', label: 'Bahasa Indonesia', htmlLang: 'id', speech: ['id-ID'] },
 ];
 
 export const CATEGORY_IDS = ['veg', 'meat', 'dairy', 'staple', 'frozen', 'drink', 'snack', 'home', 'other'];
@@ -193,6 +193,12 @@ const STRINGS = {
     setApplied: "已更新：{name} {day} {status}",
     cookBadge: "👩‍🍳 煮飯",
     proxyBadge: "代填",
+    voiceDenied: "未有咪高峰權限。請喺瀏覽器或者手機設定度，准呢個網站用咪高峰。",
+    voiceUnavailable: "呢部機喺呢個模式用唔到 app 嘅語音輸入（iPhone 主畫面 app 好常見）。可以撳鍵盤上面個 🎤 咪高峰掣講嘢輸入，效果一樣。",
+    voiceNoSpeech: "聽唔到聲，請靠近部機再講一次",
+    voiceNoMic: "搵唔到咪高峰",
+    voiceNetwork: "語音輸入要上網，請檢查網絡",
+    voiceHeard: "聽到：「{text}」",
     cat_veg: '蔬菜水果',
     cat_meat: '肉類海鮮',
     cat_dairy: '奶類同蛋',
@@ -387,6 +393,12 @@ const STRINGS = {
     setApplied: "Updated: {name} {day} {status}",
     cookBadge: "👩‍🍳 Cook",
     proxyBadge: "filled by others",
+    voiceDenied: "Microphone access is blocked. Allow the microphone for this site in your browser or phone settings.",
+    voiceUnavailable: "Voice input isn’t available here (common for iPhone home-screen apps). Use the 🎤 microphone key on your keyboard instead — it works the same.",
+    voiceNoSpeech: "Didn’t hear anything — try again closer to the phone",
+    voiceNoMic: "No microphone found",
+    voiceNetwork: "Voice input needs an internet connection",
+    voiceHeard: "Heard: \"{text}\"",
     cat_veg: 'Fruit & veg',
     cat_meat: 'Meat & seafood',
     cat_dairy: 'Dairy & eggs',
@@ -581,6 +593,12 @@ const STRINGS = {
     setApplied: "Diperbarui: {name} {day} {status}",
     cookBadge: "👩‍🍳 Masak",
     proxyBadge: "diisi orang lain",
+    voiceDenied: "Izin mikrofon diblokir. Izinkan mikrofon untuk situs ini di pengaturan browser atau HP.",
+    voiceUnavailable: "Input suara tidak tersedia di sini (sering terjadi di aplikasi layar utama iPhone). Pakai tombol 🎤 di keyboard saja — hasilnya sama.",
+    voiceNoSpeech: "Tidak terdengar suara — coba lagi lebih dekat ke HP",
+    voiceNoMic: "Mikrofon tidak ditemukan",
+    voiceNetwork: "Input suara butuh koneksi internet",
+    voiceHeard: "Terdengar: \"{text}\"",
     cat_veg: 'Sayur & buah',
     cat_meat: 'Daging & seafood',
     cat_dairy: 'Susu & telur',

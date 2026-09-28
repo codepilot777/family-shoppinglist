@@ -691,27 +691,74 @@ function openPhotos(item) {
   );
 }
 
+let recognition = null;
+
+// 語音輸入：唔同瀏覽器認嘅語言代碼唔同（Chrome 用 yue-Hant-HK，iPhone Safari 用 zh-HK），唔認就試下一個
 function startVoice() {
-  const rec = new SpeechRecognition();
   const mic = $('#mic');
-  rec.lang = langInfo().speech;
-  rec.interimResults = false;
-  rec.maxAlternatives = 1;
-  rec.onresult = (e) => {
-    const text = clean(e.results[0]?.[0]?.transcript?.replace(/[。．.!！]$/, ''), 60);
-    if (!text) return;
-    $('#add-name').value = text;
-    $('#add-name').focus();
-  };
-  rec.onerror = () => toast(t('voiceFailed'));
-  rec.onend = () => mic?.classList.remove('listening');
-  mic?.classList.add('listening');
-  toast(t('listening'));
-  try {
-    rec.start();
-  } catch {
-    mic?.classList.remove('listening');
+  if (recognition) {
+    recognition.stop(); // 再撳一下 = 停
+    return;
   }
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  let codes = [...langInfo().speech];
+  if (isIOS && codes.includes('zh-HK')) codes = ['zh-HK', ...codes.filter((c) => c !== 'zh-HK')];
+
+  const explain = (msg) =>
+    openDialog(`<h2>🎤</h2><p>${esc(msg)}</p>
+      <div class="actions"><span class="spacer"></span><button class="btn primary" data-close>${esc(t('close'))}</button></div>`);
+
+  const attempt = (i) => {
+    const rec = new SpeechRecognition();
+    recognition = rec;
+    let heard = false;
+    let failed = false;
+    rec.lang = codes[i];
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      const text = clean(e.results[0]?.[0]?.transcript?.replace(/[。．.!！]$/, ''), 60);
+      if (!text) return;
+      heard = true;
+      const input = $('#add-name');
+      input.value = text;
+      input.focus();
+      toast(t('voiceHeard', { text }), { label: t('add'), run: () => $('#add-form').requestSubmit() });
+    };
+    rec.onerror = (e) => {
+      const err = e.error;
+      if (err === 'language-not-supported' && i + 1 < codes.length) {
+        failed = 'retry'; // onend 再試下一個
+        return;
+      }
+      failed = 'shown';
+      if (err === 'aborted') return;
+      if (err === 'not-allowed') explain(t('voiceDenied'));
+      else if (err === 'service-not-allowed' || err === 'language-not-supported') explain(t('voiceUnavailable'));
+      else if (err === 'no-speech') toast(t('voiceNoSpeech'));
+      else if (err === 'audio-capture') toast(t('voiceNoMic'));
+      else if (err === 'network') toast(t('voiceNetwork'));
+      else toast(t('voiceFailed'));
+      console.warn('speech error', err);
+    };
+    rec.onend = () => {
+      recognition = null;
+      if (failed === 'retry') return attempt(i + 1);
+      mic?.classList.remove('listening');
+      if (!heard && !failed) toast(t('voiceNoSpeech'));
+    };
+    try {
+      rec.start();
+      mic?.classList.add('listening');
+      if (i === 0) toast(t('listening'));
+    } catch (err) {
+      console.warn('speech start failed', err);
+      recognition = null;
+      mic?.classList.remove('listening');
+      explain(t('voiceUnavailable'));
+    }
+  };
+  attempt(0);
 }
 
 function toggleItem(item) {
