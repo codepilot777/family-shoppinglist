@@ -1,4 +1,5 @@
 import { createStore } from './store.js';
+import { canInstall, openInstall, onInstallChange, isIOS } from './install.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
 import { compressImage, PHOTO_OPTS, THUMB_OPTS, MAX_PHOTOS } from './image.js';
@@ -150,6 +151,14 @@ async function renderSetup({ invite }) {
 
   app.innerHTML = `<div class="setup">
     <div class="field setup-lang"><span>🌐 ${esc(t('language'))}</span>${langPicker('setup-lang')}</div>
+    ${
+      canInstall()
+        ? `<div class="install-card ${isIOS() ? 'ios' : ''}">
+            <button type="button" class="btn block" id="setup-install">${esc(t('install'))}</button>
+            ${isIOS() ? `<p class="small muted">${esc(t('installSetupHint'))}</p>` : ''}
+          </div>`
+        : ''
+    }
     <img class="logo" src="icons/icon.svg" alt="">
     <h1>${esc(t('appName'))}</h1>
     <p class="lead">${esc(t('tagline'))}</p>
@@ -195,6 +204,8 @@ async function renderSetup({ invite }) {
       renderSetup({ invite });
     }),
   );
+
+  $('#setup-install')?.addEventListener('click', () => openInstall({ inviteLink: invite ? `${location.origin}${location.pathname}?f=${invite}` : '', familyId: invite }));
 
   const needName = () => {
     const name = clean($('#me').value, 20);
@@ -346,6 +357,7 @@ function renderShell() {
     <header class="topbar">
       <h1 id="family-title"></h1>
       <span class="offline ${navigator.onLine ? 'hidden' : ''}" id="offline">${esc(t('offline'))}</span>
+      ${canInstall() ? `<button class="icon-btn" id="install-btn" aria-label="${esc(t('install'))}" title="${esc(t('install'))}">📲</button>` : ''}
       <button class="icon-btn" id="invite-btn" aria-label="${esc(t('invite'))}" title="${esc(t('invite'))}">👪</button>
       <button class="icon-btn" id="settings-btn" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">⚙️</button>
     </header>
@@ -372,6 +384,7 @@ function renderShell() {
 
   renderTitle();
   $('#invite-btn').onclick = openInvite;
+  $('#install-btn')?.addEventListener('click', () => openInstall({ inviteLink: inviteLink(), familyId: state.familyId }));
   document.querySelectorAll('.views [data-view]').forEach((b) => (b.onclick = () => showView(b.dataset.view)));
   showView(ls.get('fsl-view') || 'shop');
   $('#settings-btn').onclick = openSettings;
@@ -406,6 +419,13 @@ function fillHistory() {
     .map((h) => `<option value="${esc(h)}"></option>`)
     .join('');
 }
+
+onInstallChange(() => {
+  if (!canInstall()) {
+    $('#install-btn')?.remove();
+    $('.install-card')?.remove();
+  }
+});
 
 window.addEventListener('online', () => $('#offline')?.classList.add('hidden'));
 window.addEventListener('offline', () => $('#offline')?.classList.remove('hidden'));
