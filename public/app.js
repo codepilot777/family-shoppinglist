@@ -2,6 +2,7 @@ import { createStore } from './store.js';
 import { canInstall, openInstall, onInstallChange, isIOS } from './install.js';
 import { openDevices, deviceLabel, familyCode, parseFamilyCode } from './devices-view.js';
 import { watchForUpdates } from './update.js';
+import { initWallet, walletOnEnterFamily, renderWallet } from './wallet-view.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
 import { compressImage, PHOTO_OPTS, THUMB_OPTS, MAX_PHOTOS } from './image.js';
@@ -94,9 +95,10 @@ async function boot() {
   const params = new URLSearchParams(location.search);
   const invite = clean(params.get('f'), 40).toLowerCase();
   const inviteKey = clean(params.get('k'), 40).toLowerCase();
-  if (params.get('view') === 'dinner') ls.set('fsl-view', 'dinner');
+  if (['dinner', 'wallet'].includes(params.get('view'))) ls.set('fsl-view', params.get('view'));
   if (location.search) window.history.replaceState(null, '', location.pathname);
   initDinner({ state });
+  initWallet({ state });
 
   try {
     state.store = await createStore();
@@ -345,6 +347,7 @@ function enterFamily(fid) {
         state.family = fam;
         renderTitle();
         renderDinner(); // 買餸日設定喺 family doc
+        renderWallet(); // 低餘額提醒設定都喺 family doc
       },
       onListenError,
     ),
@@ -379,18 +382,22 @@ function enterFamily(fid) {
       render();
     }),
     ...dinnerOnEnterFamily(fid),
+    ...walletOnEnterFamily(fid),
   ];
 }
 
 function showView(view) {
-  const dinner = view === 'dinner';
-  ls.set('fsl-view', dinner ? 'dinner' : 'shop');
+  if (!['shop', 'dinner', 'wallet'].includes(view)) view = 'shop';
+  ls.set('fsl-view', view);
   document.querySelectorAll('.views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
-  $('#shop-view')?.classList.toggle('hidden', dinner);
-  $('.addbar')?.classList.toggle('hidden', dinner);
-  $('#dinner')?.classList.toggle('hidden', !dinner);
-  document.body.classList.toggle('dinner-mode', dinner);
-  if (dinner) renderDinner();
+  $('#shop-view')?.classList.toggle('hidden', view !== 'shop');
+  $('.addbar')?.classList.toggle('hidden', view !== 'shop');
+  $('#dinner')?.classList.toggle('hidden', view !== 'dinner');
+  $('#wallet')?.classList.toggle('hidden', view !== 'wallet');
+  // 冇底部輸入欄嘅頁唔使留位
+  document.body.classList.toggle('dinner-mode', view !== 'shop');
+  if (view === 'dinner') renderDinner();
+  else if (view === 'wallet') renderWallet();
   else render();
 }
 
@@ -423,12 +430,14 @@ function renderShell() {
     <nav class="views">
       <button data-view="shop">${esc(t('viewShop'))}</button>
       <button data-view="dinner">${esc(t('viewDinner'))}</button>
+      <button data-view="wallet">${esc(t('viewWallet'))}</button>
     </nav>
     <div id="shop-view">
     <nav class="tabs" id="tabs" role="tablist" aria-label="${esc(t('lists'))}"></nav>
     <main id="list"></main>
     </div>
     <main id="dinner" class="hidden"></main>
+    <main id="wallet" class="hidden"></main>
     <div class="addbar">
       <form id="add-form" autocomplete="off">
         ${SpeechRecognition ? `<button type="button" class="btn mic" id="mic" aria-label="${esc(t('voice'))}" title="${esc(t('voice'))}">🎤</button>` : ''}

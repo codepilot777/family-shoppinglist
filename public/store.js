@@ -72,6 +72,7 @@ async function createFirebaseStore(firebaseConfig) {
   const pushCol = (fid) => fb.collection(db, 'families', fid, 'push');
   const recipesCol = (fid) => fb.collection(db, 'families', fid, 'recipes');
   const devicesCol = (fid) => fb.collection(db, 'families', fid, 'devices');
+  const walletCol = (fid) => fb.collection(db, 'families', fid, 'wallet');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -130,6 +131,26 @@ async function createFirebaseStore(firebaseConfig) {
 
     removeDevice(fid, uid) {
       return fb.deleteDoc(fb.doc(devicesCol(fid), uid));
+    },
+
+    // ---------- 💰 買餸錢包 ----------
+    subscribeWallet(fid, cb, onError) {
+      return fb.onSnapshot(walletCol(fid), (snap) => cb(readDocs(snap)), onError);
+    },
+
+    // 一次過寫幾筆（例如對數差額 + 入錢）
+    addWalletEntries(fid, entries) {
+      const batch = fb.writeBatch(db);
+      for (const e of entries) batch.set(fb.doc(walletCol(fid)), { ...e, createdAt: fb.serverTimestamp() });
+      return batch.commit();
+    },
+
+    updateWalletEntry(fid, id, patch) {
+      return fb.updateDoc(fb.doc(walletCol(fid), id), patch);
+    },
+
+    deleteWalletEntry(fid, id) {
+      return fb.deleteDoc(fb.doc(walletCol(fid), id));
     },
 
     // cb(true/false)：呢部機仲有冇登記
@@ -411,6 +432,27 @@ function createLocalStore() {
 
     subscribeOwnDevice(fid, cb) {
       return watch(() => cb(!!fam(fid)?.devices?.[this.uid]));
+    },
+
+    subscribeWallet(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.wallet || {}).map(([id, e]) => ({ id, ...e }))));
+    },
+
+    async addWalletEntries(fid, entries) {
+      const f = fam(fid);
+      f.wallet = f.wallet || {};
+      entries.forEach((e, i) => (f.wallet[randomId()] = { ...e, createdAt: Date.now() + i }));
+      save();
+    },
+
+    async updateWalletEntry(fid, id, patch) {
+      Object.assign(fam(fid).wallet[id], patch);
+      save();
+    },
+
+    async deleteWalletEntry(fid, id) {
+      delete fam(fid).wallet?.[id];
+      save();
     },
 
     async rotateJoinCode(fid) {
