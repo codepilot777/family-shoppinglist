@@ -8,5 +8,6 @@ const firebaseConfig = {
   storageBucket: "family-shoppinglist-61e66.firebasestorage.app",
   messagingSenderId: "1063414475176",
   appId: "1:1063414475176:web:401528ea4f2e238a1f559d",
-  measurementId: "G-46RWFYL8KV"
+  measurementId: "G-46RWFYL8KV",
+  vapidKey: "BHwY9E70kbIHzLO7kw4hX7dvnZq-tKAwn2adW_dnNUQ0viGIR832Vwr8d46Xw9TJe2xl6E1GUEAYlKO9e6Q7Tt0"
 };
