@@ -1,36 +1,80 @@
 rules_version = '2';
 
-// 每個家庭用一個隨機代碼做 ID，只有知道代碼（即係收到邀請連結）嘅人先讀寫到。
-// 所有人都要先匿名登入；冇人可以列出全部家庭。
+// 每部機（匿名登入，一部機一個 uid）要用邀請代碼登記咗，先可以讀寫呢個家庭。
+// 移除某部機 = 刪咗佢嘅 devices 記錄；換新邀請代碼之後，舊連結登記唔到。
+// 舊式家庭（未有 joinCode）暫時照舊：知道家庭 ID 就用到，直至第一次換代碼。
+// 冇人可以列出全部家庭。
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() {
       return request.auth != null;
     }
+    function familyPath(familyId) {
+      return /databases/$(database)/documents/families/$(familyId);
+    }
     function familyExists(familyId) {
-      return exists(/databases/$(database)/documents/families/$(familyId));
+      return exists(familyPath(familyId));
     }
     function shortString(v, max) {
       return v is string && v.size() <= max;
     }
-
-    match /families/{familyId} {
-      allow get: if signedIn();
-      allow create, update: if signedIn()
-        && familyId.size() >= 16
-        && request.resource.data.keys().hasOnly(['name', 'createdAt', 'marketDays', 'marketListId'])
+    // 呢個家庭嘅邀請代碼；舊式家庭未有 joinCode，就用家庭 ID 本身
+    function joinCodeOf(familyId) {
+      return get(familyPath(familyId)).data.get('joinCode', familyId);
+    }
+    function isDevice(familyId) {
+      return signedIn() && exists(/databases/$(database)/documents/families/$(familyId)/devices/$(request.auth.uid));
+    }
+    function isLegacy(familyId) {
+      return !('joinCode' in get(familyPath(familyId)).data);
+    }
+    function canUse(familyId) {
+      return isDevice(familyId) || (signedIn() && isLegacy(familyId));
+    }
+    function validFamily() {
+      return request.resource.data.keys().hasOnly(['name', 'createdAt', 'marketDays', 'marketListId', 'joinCode'])
         && shortString(request.resource.data.name, 30)
         && request.resource.data.name.size() > 0
         && request.resource.data.get('marketDays', []) is list
         && request.resource.data.get('marketDays', []).size() <= 7
-        && shortString(request.resource.data.get('marketListId', ''), 40);
+        && shortString(request.resource.data.get('marketListId', ''), 40)
+        && shortString(request.resource.data.get('joinCode', '0123456789'), 40)
+        && request.resource.data.get('joinCode', '0123456789').size() >= 10;
+    }
+
+    match /families/{familyId} {
+      allow get: if canUse(familyId);
+      allow create: if signedIn() && familyId.size() >= 16 && validFamily();
+      // 已經有代碼嘅家庭，唔准刪走代碼（唔可以變返舊式）
+      allow update: if canUse(familyId) && validFamily()
+        && (!('joinCode' in resource.data) || 'joinCode' in request.resource.data);
       // 唔准 list（避免有人列出所有家庭）同 delete
     }
 
+    // 已登記嘅機：doc ID = 部機嘅 uid
+    match /families/{familyId}/devices/{deviceId} {
+      allow read, delete: if canUse(familyId);
+      allow create: if signedIn()
+        && request.auth.uid == deviceId
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['code', 'name', 'label', 'lastSeen'])
+        && request.resource.data.code == joinCodeOf(familyId)
+        && shortString(request.resource.data.get('name', ''), 20)
+        && shortString(request.resource.data.get('label', ''), 60);
+      // 已登記嘅機只可以改自己（最後使用時間、名）；代碼要係原本嗰個或者而家有效嗰個
+      allow update: if signedIn()
+        && request.auth.uid == deviceId
+        && request.resource.data.keys().hasOnly(['code', 'name', 'label', 'lastSeen'])
+        && (request.resource.data.get('code', '') == resource.data.get('code', '')
+            || request.resource.data.get('code', '') == joinCodeOf(familyId))
+        && shortString(request.resource.data.get('name', ''), 20)
+        && shortString(request.resource.data.get('label', ''), 60);
+    }
+
     match /families/{familyId}/lists/{listId} {
-      allow read, delete: if signedIn();
-      allow create, update: if signedIn()
+      allow read, delete: if canUse(familyId);
+      allow create, update: if canUse(familyId)
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['name', 'kind', 'createdAt'])
         && request.resource.data.get('kind', 'shop') in ['shop', 'wish']
@@ -39,8 +83,8 @@ service cloud.firestore {
     }
 
     match /families/{familyId}/items/{itemId} {
-      allow read, delete: if signedIn();
-      allow create, update: if signedIn()
+      allow read, delete: if canUse(familyId);
+      allow create, update: if canUse(familyId)
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(
              ['listId', 'name', 'lang', 'tr', 'trAuto', 'qty', 'note', 'category', 'addedBy', 'done', 'doneBy', 'doneAt', 'createdAt',
@@ -66,8 +110,8 @@ service cloud.firestore {
 
     // 相片：壓縮後嘅 JPEG（data URL），唔使 Firebase Storage
     match /families/{familyId}/photos/{photoId} {
-      allow get, delete: if signedIn();
-      allow create: if signedIn()
+      allow get, delete: if canUse(familyId);
+      allow create: if canUse(familyId)
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['data', 'createdAt'])
         && request.resource.data.data is string
@@ -77,8 +121,8 @@ service cloud.firestore {
 
     // 食飯：成員
     match /families/{familyId}/members/{memberId} {
-      allow read, delete: if signedIn();
-      allow create, update: if signedIn()
+      allow read, delete: if canUse(familyId);
+      allow create, update: if canUse(familyId)
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['name', 'proxy', 'eats', 'pattern', 'lastConfirmedWeek', 'createdAt'])
         && shortString(request.resource.data.name, 20)
@@ -93,8 +137,8 @@ service cloud.firestore {
     // 食飯：每日紀錄（doc ID = 'YYYY-MM-DD'）
     // att = { 成員ID: {home, guests, note, by, late, at} }，dishes = [菜式ID]
     match /families/{familyId}/dinners/{date} {
-      allow read: if signedIn();
-      allow create, update: if signedIn()
+      allow read: if canUse(familyId);
+      allow create, update: if canUse(familyId)
         && familyExists(familyId)
         && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && request.resource.data.keys().hasOnly(['att', 'dishes'])
@@ -106,8 +150,8 @@ service cloud.firestore {
 
     // 菜式庫：菜名 + 材料（名、建議份量、常備）
     match /families/{familyId}/recipes/{recipeId} {
-      allow read, delete: if signedIn();
-      allow create, update: if signedIn()
+      allow read, delete: if canUse(familyId);
+      allow create, update: if canUse(familyId)
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['name', 'lang', 'tr', 'trAuto', 'ingredients', 'createdAt'])
         && shortString(request.resource.data.name, 40)
@@ -121,10 +165,10 @@ service cloud.firestore {
 
     // 通知：每部機一個 FCM token（由 GitHub Actions 讀取再發通知）
     match /families/{familyId}/push/{tokenId} {
-      allow delete: if signedIn();
-      allow create, update: if signedIn()
+      allow delete: if canUse(familyId);
+      allow create, update: if canUse(familyId)
         && familyExists(familyId)
-        && request.resource.data.keys().hasOnly(['token', 'memberId', 'lang', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['token', 'memberId', 'lang', 'uid', 'updatedAt'])
         && shortString(request.resource.data.token, 4096)
         && shortString(request.resource.data.memberId, 40)
         && request.resource.data.lang in ['zh', 'en', 'id'];
@@ -132,8 +176,8 @@ service cloud.firestore {
 
     // 家庭字典：屋企人改過嘅翻譯，下次自動用
     match /families/{familyId}/dict/{entryId} {
-      allow read: if signedIn();
-      allow write: if signedIn()
+      allow read: if canUse(familyId);
+      allow write: if canUse(familyId)
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['zh', 'en', 'id', 'cat'])
         && shortString(request.resource.data.get('zh', ''), 60)

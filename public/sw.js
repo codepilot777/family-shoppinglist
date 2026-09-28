@@ -1,5 +1,6 @@
-// 離線用：先用快取開 app，背景再攞新版本。Firestore 請求唔經呢度。
-const CACHE = 'fsl-v10';
+// 離線用：用快取開 app；有新版本就喺背景下載，等用戶撳「更新」。Firestore 請求唔經呢度。
+// 版本號：GitHub Actions 發佈時會自動換成 commit SHA（每次發佈都算新版本）。
+const CACHE = 'fsl-v11';
 const SHELL = [
   './',
   'index.html',
@@ -12,6 +13,8 @@ const SHELL = [
   'image.js',
   'ui.js',
   'install.js',
+  'update.js',
+  'devices-view.js',
   'dates.js',
   'dinner.js',
   'dinner-view.js',
@@ -24,8 +27,13 @@ const SHELL = [
   'icons/icon.svg',
 ];
 
+// 新版本：先喺背景下載晒（唔用瀏覽器 HTTP 快取），等用戶撳「更新」先接手
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))));
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
@@ -37,19 +45,17 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// 同一個版本嘅檔案一律由快取出（唔會新舊撈埋）；新版本由上面 install 整套換
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const cached = await cache.match(e.request, { ignoreSearch: e.request.mode === 'navigate' });
-      const fresh = fetch(e.request)
-        .then((res) => {
-          if (res.ok) cache.put(e.request, res.clone());
-          return res;
-        })
-        .catch(() => cached);
-      return cached || fresh;
+      if (cached) return cached;
+      const res = await fetch(e.request);
+      if (res.ok) cache.put(e.request, res.clone());
+      return res;
     }),
   );
 });

@@ -502,7 +502,7 @@ async function saveToken() {
   const token = await store().getPushToken(store().vapidKey);
   if (!token) return false;
   const key = await sha(token);
-  await store().savePushToken(fid(), key, { token, memberId: me.id, lang: getLang() });
+  await store().savePushToken(fid(), key, { token, memberId: me.id, lang: getLang(), uid: store().uid });
   ls.set(`fsl-push-${fid()}`, key);
   return true;
 }

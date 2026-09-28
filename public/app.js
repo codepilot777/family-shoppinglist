@@ -1,5 +1,7 @@
 import { createStore } from './store.js';
 import { canInstall, openInstall, onInstallChange, isIOS } from './install.js';
+import { openDevices, deviceLabel, familyCode, parseFamilyCode } from './devices-view.js';
+import { watchForUpdates } from './update.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
 import { compressImage, PHOTO_OPTS, THUMB_OPTS, MAX_PHOTOS } from './image.js';
@@ -86,11 +88,12 @@ function ensureTranslations(items) {
 
 async function boot() {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').then(watchForUpdates).catch(() => {});
   }
 
   const params = new URLSearchParams(location.search);
-  const invite = clean(params.get('f'), 40);
+  const invite = clean(params.get('f'), 40).toLowerCase();
+  const inviteKey = clean(params.get('k'), 40).toLowerCase();
   if (params.get('view') === 'dinner') ls.set('fsl-view', 'dinner');
   if (location.search) window.history.replaceState(null, '', location.pathname);
   initDinner({ state });
@@ -103,7 +106,7 @@ async function boot() {
     return;
   }
 
-  if (invite && invite !== state.familyId) return renderSetup({ invite });
+  if (invite && invite !== state.familyId) return renderSetup({ invite, inviteKey });
   if (!state.me || !state.familyId) return renderSetup({});
   enterFamily(state.familyId);
   handleDinnerParams(params);
@@ -133,21 +136,58 @@ function langPicker(name = 'lang') {
   ).join('')}</div>`;
 }
 
+// ---------- 加入 / 登記呢部機 ----------
+
+const codeKey = (fid) => `fsl-code-${fid}`;
+const deviceInfo = () => ({ name: state.me, label: deviceLabel() });
+
+// 用邀請代碼登記呢部機；代碼唔啱會 throw
+async function registerThisDevice(fid, key) {
+  const code = key || fid; // 舊式家庭：代碼就係家庭 ID
+  try {
+    await state.store.registerDevice(fid, code, deviceInfo());
+  } catch (err) {
+    if (err?.code !== 'permission-denied') throw err;
+    // Firestore rules 未更新（未有 devices）或者舊式家庭：讀得到就照入
+    const fam = await state.store.getFamily(fid).catch(() => null);
+    if (!fam || fam.joinCode) throw err;
+  }
+  ls.set(codeKey(fid), code);
+}
+
+// 已經入咗嘅家庭：每次開 app 更新「最後使用」（舊式家庭會喺呢度自動登記）
+function touchDevice(fid) {
+  state.store.registerDevice(fid, ls.get(codeKey(fid)) || fid, deviceInfo()).catch(() => {});
+}
+
+// 部機被移除或者代碼換咗：返去加入畫面
+let accessLostShown = false;
+function onListenError(err) {
+  if (err?.code !== 'permission-denied' || !state.familyId) return fail(err);
+  if (accessLostShown) return;
+  accessLostShown = true;
+  const fid = state.familyId;
+  resetFamily();
+  ls.set(codeKey(fid), null);
+  renderSetup({});
+  openDialog(`<h2>🔒</h2><p>${esc(t('accessLost'))}</p>
+    <div class="actions"><span class="spacer"></span><button class="btn primary" data-close>${esc(t('close'))}</button></div>`);
+}
+
 // ---------- 設定畫面（建立 / 加入家庭） ----------
 
-async function renderSetup({ invite }) {
+async function renderSetup({ invite, inviteKey } = {}) {
   const app = $('#app');
   app.className = '';
+  document.title = t('appName');
   let inviteFamily = null;
   if (invite) {
-    try {
-      inviteFamily = await state.store.getFamily(invite);
-    } catch (err) {
-      console.error(err);
-    }
+    // 未登記嘅機通常讀唔到家庭名（已經鎖好），就顯示一般嘅「加入屋企」
+    inviteFamily = await state.store.getFamily(invite).catch(() => null);
   }
   // 保留已經打咗嘅名（例如切換語言嘅時候）
   const typedName = $('#me')?.value;
+  const inviteUrl = invite ? `${location.origin}${location.pathname}?f=${invite}${inviteKey ? `&k=${inviteKey}` : ''}` : '';
 
   app.innerHTML = `<div class="setup">
     <div class="field setup-lang"><span>🌐 ${esc(t('language'))}</span>${langPicker('setup-lang')}</div>
@@ -172,14 +212,11 @@ async function renderSetup({ invite }) {
 
     ${
       invite
-        ? inviteFamily
-          ? `<div class="card">
-              <h2>${esc(t('joinFamilyNamed', { name: inviteFamily.name }))}</h2>
-              <button class="btn primary block" id="join-invite">${esc(t('join'))}</button>
-            </div>
-            <p class="or"><button class="link-btn" id="skip-invite">${esc(t('skipInvite'))}</button></p>`
-          : `<div class="card"><h2>${esc(t('inviteNotFound'))}</h2><p class="muted small">${esc(t('inviteNotFoundHint'))}</p>
-              <button class="btn block" id="skip-invite">${esc(t('back'))}</button></div>`
+        ? `<div class="card">
+            <h2>${esc(inviteFamily ? t('joinFamilyNamed', { name: inviteFamily.name }) : t('joinFamilyGeneric'))}</h2>
+            <button class="btn primary block" id="join-invite">${esc(t('join'))}</button>
+          </div>
+          <p class="or"><button class="link-btn" id="skip-invite">${esc(t('skipInvite'))}</button></p>`
         : `<div class="card">
             <h2>${esc(t('createFamily'))}</h2>
             <label class="field"><span>${esc(t('familyName'))}</span>
@@ -191,7 +228,7 @@ async function renderSetup({ invite }) {
           <div class="card">
             <h2>${esc(t('joinFamily'))}</h2>
             <label class="field"><span>${esc(t('familyCodeHint'))}</span>
-              <input class="input" id="code" maxlength="200" autocapitalize="off" autocomplete="off" spellcheck="false">
+              <input class="input" id="code" maxlength="300" autocapitalize="off" autocomplete="off" spellcheck="false">
             </label>
             <button class="btn block" id="join">${esc(t('join'))}</button>
           </div>`
@@ -201,11 +238,11 @@ async function renderSetup({ invite }) {
   app.querySelectorAll('input[name="setup-lang"]').forEach((r) =>
     r.addEventListener('change', () => {
       changeLang(r.value);
-      renderSetup({ invite });
+      renderSetup({ invite, inviteKey });
     }),
   );
 
-  $('#setup-install')?.addEventListener('click', () => openInstall({ inviteLink: invite ? `${location.origin}${location.pathname}?f=${invite}` : '', familyId: invite }));
+  $('#setup-install')?.addEventListener('click', () => openInstall({ inviteLink: inviteUrl, familyId: invite ? familyCode(invite, inviteKey) : '' }));
 
   const needName = () => {
     const name = clean($('#me').value, 20);
@@ -222,11 +259,23 @@ async function renderSetup({ invite }) {
     if (btn) btn.disabled = on;
   };
 
+  const join = async (btn, fid, key) => {
+    busy(btn, true);
+    try {
+      await registerThisDevice(fid, key);
+      joinFamily(fid);
+    } catch (err) {
+      console.warn(err);
+      toast(err?.code === 'permission-denied' ? t('inviteInvalid') : t('errorPrefix', { msg: err?.message || err }));
+      busy(btn, false);
+    }
+  };
+
   $('#skip-invite')?.addEventListener('click', () => renderSetup({}));
 
-  $('#join-invite')?.addEventListener('click', () => {
+  $('#join-invite')?.addEventListener('click', (e) => {
     if (!needName()) return;
-    joinFamily(invite);
+    join(e.target, invite, inviteKey);
   });
 
   $('#create')?.addEventListener('click', async (e) => {
@@ -234,7 +283,8 @@ async function renderSetup({ invite }) {
     const familyName = clean($('#family-name').value, 30) || t('defaultFamilyName');
     busy(e.target, true);
     try {
-      const fid = await state.store.createFamily(familyName, t('defaultListName'));
+      const { fid, joinCode } = await state.store.createFamily(familyName, t('defaultListName'), deviceInfo());
+      ls.set(codeKey(fid), joinCode || fid);
       joinFamily(fid);
       setTimeout(openInvite, 400);
     } catch (err) {
@@ -243,37 +293,22 @@ async function renderSetup({ invite }) {
     }
   });
 
-  $('#join')?.addEventListener('click', async (e) => {
+  $('#join')?.addEventListener('click', (e) => {
     if (!needName()) return;
-    let code = clean($('#code').value, 200);
-    // 容許直接貼成條連結
-    const m = code.match(/[?&]f=([a-z0-9]+)/i);
-    if (m) code = m[1];
-    code = code.toLowerCase();
-    if (!code) return toast(t('needCode'));
-    busy(e.target, true);
-    try {
-      const fam = await state.store.getFamily(code);
-      if (!fam) {
-        toast(t('familyNotFound'));
-        busy(e.target, false);
-        return;
-      }
-      joinFamily(code);
-    } catch (err) {
-      fail(err);
-      busy(e.target, false);
-    }
+    const { fid, key } = parseFamilyCode($('#code').value);
+    if (!fid) return toast(t('needCode'));
+    join(e.target, fid, key);
   });
 }
 
 function joinFamily(fid) {
   state.familyId = fid;
+  accessLostShown = false;
   ls.set('fsl-family', fid);
   enterFamily(fid);
 }
 
-function leaveFamily() {
+function resetFamily() {
   state.unsubs.forEach((u) => u());
   state.unsubs = [];
   state.familyId = null;
@@ -282,6 +317,14 @@ function leaveFamily() {
   state.items = [];
   setFamilyDictionary([]);
   ls.set('fsl-family', null);
+}
+
+function leaveFamily() {
+  const fid = state.familyId;
+  // 自己離開：刪走呢部機嘅登記（之後要邀請連結先入返）
+  if (fid) state.store.removeDevice(fid, state.store.uid).catch(() => {});
+  resetFamily();
+  if (fid) ls.set(codeKey(fid), null);
   renderSetup({});
 }
 
@@ -293,12 +336,27 @@ function enterFamily(fid) {
   renderShell();
 
   const s = state.store;
+  touchDevice(fid);
+  let registered = false;
   state.unsubs = [
-    s.subscribeFamily(fid, (fam) => {
-      state.family = fam;
-      renderTitle();
-      renderDinner(); // 買餸日設定喺 family doc
-    }),
+    s.subscribeFamily(
+      fid,
+      (fam) => {
+        state.family = fam;
+        renderTitle();
+        renderDinner(); // 買餸日設定喺 family doc
+      },
+      onListenError,
+    ),
+    // 呢部機嘅登記被刪咗（已鎖好嘅家庭）→ 即刻退出
+    s.subscribeOwnDevice(
+      fid,
+      (exists) => {
+        if (exists) registered = true;
+        else if (registered && state.family?.joinCode) onListenError({ code: 'permission-denied' });
+      },
+      onListenError,
+    ),
     s.subscribeLists(
       fid,
       (lists) => {
@@ -306,7 +364,7 @@ function enterFamily(fid) {
         if (!state.lists.some((l) => l.id === state.listId)) selectList(state.lists[0]?.id || null, false);
         render();
       },
-      fail,
+      onListenError,
     ),
     s.subscribeItems(
       fid,
@@ -314,7 +372,7 @@ function enterFamily(fid) {
         state.items = items;
         render();
       },
-      fail,
+      onListenError,
     ),
     s.subscribeDict(fid, (entries) => {
       setFamilyDictionary(entries);
@@ -960,8 +1018,10 @@ function openNewList() {
 }
 
 function inviteLink() {
-  return `${location.origin}${location.pathname}?f=${state.familyId}`;
+  const k = state.family?.joinCode;
+  return `${location.origin}${location.pathname}?f=${state.familyId}${k ? `&k=${k}` : ''}`;
 }
+const currentFamilyCode = () => familyCode(state.familyId, state.family?.joinCode);
 
 async function share(text, url) {
   if (navigator.share) {
@@ -986,7 +1046,7 @@ function openInvite() {
     `<h2>${esc(t('invite'))}</h2>
     ${local ? `<div class="demo-note">${esc(t('inviteDemo'))}</div>` : `<p class="small">${esc(t('inviteText'))}</p>`}
     <div class="code">${esc(inviteLink())}</div>
-    <p class="small muted">${esc(t('inviteCode'))} <b>${esc(state.familyId)}</b></p>
+    <p class="small muted">${esc(t('inviteCode'))} <b>${esc(currentFamilyCode())}</b></p>
     <p class="small muted">${esc(t('homeScreenTip'))}</p>
     <div class="actions"><span class="spacer"></span>
       <button class="btn" data-close>${esc(t('close'))}</button>
@@ -1028,7 +1088,8 @@ function openSettings() {
       </div>
 
       <div class="section-title">${esc(t('familyCode'))}</div>
-      <div class="code">${esc(state.familyId)}</div>
+      <div class="code">${esc(currentFamilyCode())}</div>
+      <button type="button" class="btn block devices-btn" id="open-devices">${esc(t('devices'))}</button>
 
       <div class="section-title">${esc(t('other'))}</div>
       <div class="row wrap">
@@ -1050,7 +1111,10 @@ function openSettings() {
         const ln = clean(f.get('list'), 30);
         const lang = f.get('lang');
         applyTextSize(f.get('size') || 'normal');
-        if (me) rememberName(me);
+        if (me && me !== state.me) {
+          rememberName(me);
+          touchDevice(state.familyId); // 部機登記入面嘅名都改埋
+        }
         if (fam && fam !== state.family?.name) state.store.renameFamily(state.familyId, fam).catch(fail);
         const kind = f.get('kind') === 'wish' ? 'wish' : 'shop';
         const listPatch = {};
@@ -1071,6 +1135,12 @@ function openSettings() {
         confirmDialog(t('deleteListConfirm', { name: list.name, n }), t('delete'), () => state.store.deleteList(state.familyId, list.id).catch(fail));
       });
       $('#leave', d).onclick = () => confirmDialog(t('leaveConfirm'), t('leave'), leaveFamily);
+      $('#open-devices', d).onclick = () =>
+        openDevices({
+          state,
+          // 換咗代碼：即刻出分享新連結畫面
+          onRotated: () => setTimeout(openInvite, 300),
+        });
     },
   );
 }
