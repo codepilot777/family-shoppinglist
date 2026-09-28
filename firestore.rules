@@ -19,9 +19,12 @@ service cloud.firestore {
       allow get: if signedIn();
       allow create, update: if signedIn()
         && familyId.size() >= 16
-        && request.resource.data.keys().hasOnly(['name', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['name', 'createdAt', 'marketDays', 'marketListId'])
         && shortString(request.resource.data.name, 30)
-        && request.resource.data.name.size() > 0;
+        && request.resource.data.name.size() > 0
+        && request.resource.data.get('marketDays', []) is list
+        && request.resource.data.get('marketDays', []).size() <= 7
+        && shortString(request.resource.data.get('marketListId', ''), 40);
       // 唔准 list（避免有人列出所有家庭）同 delete
     }
 
@@ -87,15 +90,33 @@ service cloud.firestore {
         && shortString(request.resource.data.get('lastConfirmedWeek', ''), 10);
     }
 
-    // 食飯：每日紀錄（doc ID = 'YYYY-MM-DD'），att = { 成員ID: {home, guests, note, by, late, at} }
+    // 食飯：每日紀錄（doc ID = 'YYYY-MM-DD'）
+    // att = { 成員ID: {home, guests, note, by, late, at} }，dishes = [菜式ID]
     match /families/{familyId}/dinners/{date} {
       allow read: if signedIn();
       allow create, update: if signedIn()
         && familyExists(familyId)
         && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && request.resource.data.keys().hasOnly(['att'])
-        && request.resource.data.att is map
-        && request.resource.data.att.size() <= 30;
+        && request.resource.data.keys().hasOnly(['att', 'dishes'])
+        && request.resource.data.get('att', {}) is map
+        && request.resource.data.get('att', {}).size() <= 30
+        && request.resource.data.get('dishes', []) is list
+        && request.resource.data.get('dishes', []).size() <= 12;
+    }
+
+    // 菜式庫：菜名 + 材料（名、建議份量、常備）
+    match /families/{familyId}/recipes/{recipeId} {
+      allow read, delete: if signedIn();
+      allow create, update: if signedIn()
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['name', 'lang', 'tr', 'trAuto', 'ingredients', 'createdAt'])
+        && shortString(request.resource.data.name, 40)
+        && request.resource.data.name.size() > 0
+        && request.resource.data.get('tr', {}) is map
+        && request.resource.data.get('tr', {}).size() <= 3
+        && request.resource.data.get('trAuto', {}) is map
+        && request.resource.data.get('ingredients', []) is list
+        && request.resource.data.get('ingredients', []).size() <= 40;
     }
 
     // 通知：每部機一個 FCM token（由 GitHub Actions 讀取再發通知）

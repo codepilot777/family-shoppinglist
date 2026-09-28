@@ -1,6 +1,7 @@
 // 砌通知內容（冇網絡、冇 Firebase，方便測試）。
 import { weekday, nextWeekStart, weekDates, formatDay } from '../../public/dates.js';
 import { attendance, summarize } from '../../public/dinner.js';
+import { marketWindow, collectIngredients } from '../../public/menu.js';
 
 const LOCALES = { zh: 'zh-Hant-HK', en: 'en', id: 'id' };
 
@@ -18,6 +19,7 @@ const TEXT = {
     awayList: '唔返：{names}',
     everyoneHome: '全部返',
     guests: '（包括 {n} 位客）',
+    market: '\n🧺 今日買餸：{n} 樣材料，打開 app 睇',
     sep: '、',
   },
   en: {
@@ -33,6 +35,7 @@ const TEXT = {
     awayList: 'Out: {names}',
     everyoneHome: 'Everyone home',
     guests: ' (incl. {n} guest(s))',
+    market: '\n🧺 Shopping day: {n} ingredient(s) — open the app',
     sep: ', ',
   },
   id: {
@@ -48,6 +51,7 @@ const TEXT = {
     awayList: 'Tidak di rumah: {names}',
     everyoneHome: 'Semua di rumah',
     guests: ' (termasuk {n} tamu)',
+    market: '\n🧺 Hari belanja: {n} bahan — buka aplikasi',
     sep: ', ',
   },
 };
@@ -67,14 +71,19 @@ function summaryBody(tx, sum) {
  * @param dinners { 'YYYY-MM-DD': { att } }
  * @param devices [{ key, token, memberId, lang }]
  * @param appUrl 'https://…/family-shoppinglist/'
+ * @param marketDays 買餸日 [0..6]（冇設定就唔提）
+ * @param recipes 菜式庫（計今日買餸要幾多樣材料）
  * @returns [{ key, token, data: { title, body, url, tag, actions } }]
  */
-export function buildMessages({ mode, today, members, dinners, devices, appUrl }) {
+export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [] }) {
   const out = [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const tonight = summarize(members, today, dinners[today], weekday(today));
   const weekStart = nextWeekStart(today);
   const dates = weekDates(weekStart);
+  // 買餸日：由今日計到下個買餸日前，要買幾多樣（唔計常備）
+  const win = marketDays.length ? marketWindow(today, marketDays) : null;
+  const toBuy = win?.isMarketDay ? collectIngredients(win.dates, dinners, recipes).filter((x) => !x.staple).length : 0;
 
   for (const dev of devices) {
     const m = byId.get(dev.memberId);
@@ -103,7 +112,8 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl }
           ]),
         });
       } else {
-        push({ title: fill(tx.cookMorningTitle, { n: tonight.total }), body: summaryBody(tx, tonight), url: url('view=dinner') });
+        const body = summaryBody(tx, tonight) + (toBuy ? fill(tx.market, { n: toBuy }) : '');
+        push({ title: fill(tx.cookMorningTitle, { n: tonight.total }), body, url: url('view=dinner') });
       }
     } else if (mode === 'cutoff') {
       if (eats) continue; // 截數人數只發俾負責煮飯嘅人

@@ -3,6 +3,7 @@ import { t, getLang, langInfo } from './i18n.js';
 import { $, esc, ls, clean, toast, fail, openDialog, confirmDialog } from './ui.js';
 import { hkNow, hkToday, addDays, weekday, nextWeekStart, weekDates, formatDay } from './dates.js';
 import { CUTOFF_HOUR, attendance, summarize, isLateChange, defaultPattern } from './dinner.js';
+import { initMenu, subscribeRecipes, dishesLine, marketCardHtml, bindMenu } from './menu-view.js';
 
 let ctx; // { state, onChange }
 const d = {
@@ -14,6 +15,7 @@ const d = {
 
 export function initDinner(context) {
   ctx = context;
+  initMenu({ ctx, dinners: () => d.dinners, headcount: (date) => daySummary(date).total, rerender: () => renderDinner() });
   document.addEventListener('visibilitychange', () => {
     // 過咗半夜：重新訂閱新嘅日期範圍
     if (document.visibilityState === 'visible' && ctx.state.familyId && hkToday() !== d.today) subscribeDinners(ctx.state.familyId);
@@ -62,7 +64,7 @@ export function dinnerOnEnterFamily(familyId) {
     },
     fail,
   );
-  return [unsubMembers, () => d.unsubDinners?.()];
+  return [unsubMembers, subscribeRecipes(familyId), () => d.unsubDinners?.()];
 }
 
 const daySummary = (date) => summarize(d.members, date, d.dinners[date], weekday(date));
@@ -101,6 +103,7 @@ export function renderDinner() {
       <span class="pill ${cutoff ? 'late' : ''}">${esc(cutoff ? t('cutoffPassed') : t('cutoffAt', { h: CUTOFF_HOUR }))}</span>
     </div>
     <ul class="people">${sum.rows.map((r) => personChip(r)).join('')}</ul>
+    <button class="dishes-line" data-menu="${esc(today)}">${dishesLine(today)} <span class="link-btn">✏️</span></button>
     ${
       me.eats !== false
         ? `<div class="my-tonight">
@@ -121,6 +124,8 @@ export function renderDinner() {
     <button class="link-btn" data-day="${esc(today)}">✏️ ${esc(t('edit'))}</button>
   </section>`;
 
+  html += marketCardHtml(today);
+
   html += `<h2 class="group-title">${esc(t('nextDays'))}</h2><ul class="items days">`;
   for (let i = 1; i <= 7; i++) {
     const date = addDays(today, i);
@@ -129,14 +134,16 @@ export function renderDinner() {
     const late = s.rows.some((r) => r.late);
     html += `<li class="item"><button class="toggle" data-day="${esc(date)}">
       <span class="day-label">${esc(dayLabel(date))}</span>
-      <span class="body"><span class="meta">${esc(away.length ? t('awayList', { names: away.join('、') }) : t('everyoneHome'))}${late ? ' ⚠️' : ''}</span></span>
+      <span class="body"><span class="meta">${esc(away.length ? t('awayList', { names: away.join('、') }) : t('everyoneHome'))}${late ? ' ⚠️' : ''}</span>
+        <span class="meta dishes-meta">${dishesLine(date)}</span></span>
       <b class="day-count">🍚 ${s.total}</b>
-    </button></li>`;
+    </button><button class="icon-btn more" data-menu="${esc(date)}" aria-label="${esc(t('pickDishes'))}" title="${esc(t('pickDishes'))}">🍽</button></li>`;
   }
   html += `</ul>`;
 
   html += `<div class="dinner-actions">
     <button class="btn" id="open-week">${esc(t('weekForm'))}</button>
+    <button class="btn" id="open-recipes">${esc(t('recipes'))}</button>
     <button class="btn" id="open-members">${esc(t('members'))}</button>
     <button class="btn" id="open-notify">${esc(pushEnabledHere() ? t('notifyOn') : t('notify'))}</button>
   </div>
@@ -203,6 +210,7 @@ function bindMain(root, me, unfilled) {
   $('#wa-week', root).onclick = () => shareWeek(unfilled);
   $('#wa-tonight', root).onclick = shareTonight;
   root.querySelectorAll('[data-day]').forEach((b) => (b.onclick = () => openDay(b.dataset.day)));
+  bindMenu(root, d.today);
   root.querySelectorAll('[data-set-home]').forEach(
     (b) => (b.onclick = () => setOne(me, d.today, { home: b.dataset.setHome === '1' })),
   );

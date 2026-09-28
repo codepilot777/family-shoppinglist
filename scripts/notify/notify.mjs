@@ -33,10 +33,16 @@ for (const famRef of await db.collection('families').listDocuments()) {
   ]);
   if (pushSnap.empty || membersSnap.empty) continue;
 
+  // 買餸日提示用（淨係朝早要）
+  const [famSnap, recipesSnap] =
+    MODE === 'daily' ? await Promise.all([famRef.get(), famRef.collection('recipes').get()]) : [null, null];
+
   const members = membersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const devices = pushSnap.docs.map((d) => ({ key: d.id, ...d.data() }));
   const dinners = Object.fromEntries(dinnersSnap.docs.map((d) => [d.id, d.data()]));
-  const messages = buildMessages({ mode: MODE, today, members, dinners, devices, appUrl: APP_URL });
+  const recipes = recipesSnap ? recipesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
+  const marketDays = famSnap?.data()?.marketDays || [];
+  const messages = buildMessages({ mode: MODE, today, members, dinners, devices, appUrl: APP_URL, marketDays, recipes });
   console.log(`family …${famRef.id.slice(-4)}: ${members.length} members, ${devices.length} devices, ${messages.length} messages`);
 
   for (const msg of messages) {
