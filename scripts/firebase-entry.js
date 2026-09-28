@@ -1,6 +1,6 @@
 // Bundled into public/vendor/firebase.js by `npm run vendor`.
 export { initializeApp } from 'firebase/app';
-export { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+export { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from 'firebase/auth';
 export {
   initializeFirestore,
   persistentLocalCache,
@@ -20,5 +20,6 @@ export {
   writeBatch,
   serverTimestamp,
   documentId,
+  connectFirestoreEmulator,
 } from 'firebase/firestore';
 export { getMessaging, getToken, deleteToken, isSupported as isMessagingSupported } from 'firebase/messaging';

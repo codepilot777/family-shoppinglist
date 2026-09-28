@@ -39,6 +39,16 @@ async function createFirebaseStore(firebaseConfig) {
     localCache: fb.persistentLocalCache({ tabManager: fb.persistentMultipleTabManager() }),
   });
 
+  // 開發測試用：localStorage 'fsl-emulator' = 主機名 → 連本機 Firebase emulator（正式用戶唔會有）
+  let emulatorHost = null;
+  try {
+    emulatorHost = localStorage.getItem('fsl-emulator');
+  } catch {}
+  if (emulatorHost) {
+    fb.connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true });
+    fb.connectFirestoreEmulator(db, emulatorHost, 8085);
+  }
+
   await new Promise((resolve, reject) => {
     const off = fb.onAuthStateChanged(auth, (user) => {
       if (user) {
@@ -61,6 +71,7 @@ async function createFirebaseStore(firebaseConfig) {
   const dinnersCol = (fid) => fb.collection(db, 'families', fid, 'dinners');
   const pushCol = (fid) => fb.collection(db, 'families', fid, 'push');
   const recipesCol = (fid) => fb.collection(db, 'families', fid, 'recipes');
+  const devicesCol = (fid) => fb.collection(db, 'families', fid, 'devices');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -68,19 +79,69 @@ async function createFirebaseStore(firebaseConfig) {
       return { ...data, id: d.id, createdAt: toMillis(data.createdAt), doneAt: data.doneAt ? toMillis(data.doneAt) : null };
     });
 
+  const registerDevice = (fid, code, info) =>
+    fb.setDoc(
+      fb.doc(devicesCol(fid), auth.currentUser.uid),
+      { code, name: info?.name || '', label: info?.label || '', lastSeen: fb.serverTimestamp() },
+      { merge: true },
+    );
+
   return {
     mode: 'firebase',
 
+    get uid() {
+      return auth.currentUser?.uid || '';
+    },
+
+    // 未登記嘅機讀唔到（會 throw permission-denied）
     async getFamily(fid) {
       const snap = await fb.getDoc(familyRef(fid));
       return snap.exists() ? { id: fid, ...snap.data() } : null;
     },
 
-    async createFamily(name, firstListName) {
+    // 新家庭一開始就有邀請代碼，建立者部機即刻登記
+    async createFamily(name, firstListName, device) {
       const fid = randomId();
-      await fb.setDoc(familyRef(fid), { name, createdAt: fb.serverTimestamp() });
+      let joinCode = randomId(12);
+      try {
+        await fb.setDoc(familyRef(fid), { name, joinCode, createdAt: fb.serverTimestamp() });
+        await registerDevice(fid, joinCode, device);
+      } catch (err) {
+        if (err?.code !== 'permission-denied') throw err;
+        // Firestore rules 未更新：照舊式開（之後更新 rules 再「換新邀請代碼」就會鎖好）
+        joinCode = '';
+        await fb.setDoc(familyRef(fid), { name, createdAt: fb.serverTimestamp() });
+      }
       await fb.addDoc(listsCol(fid), { name: firstListName, createdAt: fb.serverTimestamp() });
-      return fid;
+      return { fid, joinCode };
+    },
+
+    // ---------- 裝置 ----------
+    // 用邀請代碼登記（或者更新最後使用時間）；代碼唔啱會 throw permission-denied
+    registerDevice,
+
+    subscribeDevices(fid, cb, onError) {
+      return fb.onSnapshot(
+        devicesCol(fid),
+        (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }), lastSeen: toMillis(d.data({ serverTimestamps: 'estimate' }).lastSeen) }))),
+        onError,
+      );
+    },
+
+    removeDevice(fid, uid) {
+      return fb.deleteDoc(fb.doc(devicesCol(fid), uid));
+    },
+
+    // cb(true/false)：呢部機仲有冇登記
+    subscribeOwnDevice(fid, cb, onError) {
+      return fb.onSnapshot(fb.doc(devicesCol(fid), auth.currentUser.uid), (snap) => cb(snap.exists()), onError);
+    },
+
+    // 換新邀請代碼：舊連結即時失效，已登記嘅機唔受影響
+    async rotateJoinCode(fid) {
+      const joinCode = randomId(12);
+      await fb.updateDoc(familyRef(fid), { joinCode });
+      return joinCode;
     },
 
     renameFamily(fid, name) {
@@ -126,8 +187,8 @@ async function createFirebaseStore(firebaseConfig) {
       return fb.setDoc(fb.doc(dinnersCol(fid), date), { dishes }, { merge: true });
     },
 
-    subscribeFamily(fid, cb) {
-      return fb.onSnapshot(familyRef(fid), (snap) => cb(snap.exists() ? { id: fid, ...snap.data() } : null));
+    subscribeFamily(fid, cb, onError) {
+      return fb.onSnapshot(familyRef(fid), (snap) => cb(snap.exists() ? { id: fid, ...snap.data() } : null), onError);
     },
 
     subscribeLists(fid, cb, onError) {
@@ -307,17 +368,56 @@ function createLocalStore() {
   return {
     mode: 'local',
 
-    async getFamily(fid) {
-      const f = fam(fid);
-      return f ? { id: fid, name: f.name } : null;
+    get uid() {
+      let id = null;
+      try {
+        id = localStorage.getItem('fsl-local-uid');
+        if (!id) localStorage.setItem('fsl-local-uid', (id = `local-${randomId(10)}`));
+      } catch {}
+      return id || 'local';
     },
 
-    async createFamily(name, firstListName) {
+    async getFamily(fid) {
+      const f = fam(fid);
+      return f ? { id: fid, name: f.name, joinCode: f.joinCode } : null;
+    },
+
+    async createFamily(name, firstListName, device) {
       const fid = randomId();
       const lid = randomId();
-      data.families[fid] = { name, lists: { [lid]: { name: firstListName, createdAt: Date.now() } }, items: {} };
+      const joinCode = randomId(12);
+      data.families[fid] = { name, joinCode, lists: { [lid]: { name: firstListName, createdAt: Date.now() } }, items: {} };
+      await this.registerDevice(fid, joinCode, device);
+      return { fid, joinCode };
+    },
+
+    // 示範模式都照正式版咁檢查代碼，方便測試
+    async registerDevice(fid, code, info) {
+      const f = fam(fid);
+      const cur = f?.devices?.[this.uid];
+      if (!f || (code !== (f.joinCode ?? fid) && code !== cur?.code)) throw Object.assign(new Error('permission-denied'), { code: 'permission-denied' });
+      f.devices = { ...f.devices, [this.uid]: { code, name: info?.name || '', label: info?.label || '', lastSeen: Date.now() } };
       save();
-      return fid;
+    },
+
+    subscribeDevices(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.devices || {}).map(([id, dv]) => ({ id, ...dv }))));
+    },
+
+    async removeDevice(fid, uid) {
+      delete fam(fid).devices?.[uid];
+      save();
+    },
+
+    subscribeOwnDevice(fid, cb) {
+      return watch(() => cb(!!fam(fid)?.devices?.[this.uid]));
+    },
+
+    async rotateJoinCode(fid) {
+      const joinCode = randomId(12);
+      fam(fid).joinCode = joinCode;
+      save();
+      return joinCode;
     },
 
     async renameFamily(fid, name) {
@@ -333,7 +433,7 @@ function createLocalStore() {
     subscribeFamily(fid, cb) {
       return watch(() => {
         const f = fam(fid);
-        cb(f ? { id: fid, name: f.name, marketDays: f.marketDays, marketListId: f.marketListId } : null);
+        cb(f ? { id: fid, name: f.name, marketDays: f.marketDays, marketListId: f.marketListId, joinCode: f.joinCode } : null);
       });
     },
 

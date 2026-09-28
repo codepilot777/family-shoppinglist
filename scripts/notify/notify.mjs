@@ -33,12 +33,23 @@ for (const famRef of await db.collection('families').listDocuments()) {
   ]);
   if (pushSnap.empty || membersSnap.empty) continue;
 
-  // 買餸日提示用（淨係朝早要）
-  const [famSnap, recipesSnap] =
-    MODE === 'daily' ? await Promise.all([famRef.get(), famRef.collection('recipes').get()]) : [null, null];
+  const [famSnap, devicesSnap, recipesSnap] = await Promise.all([
+    famRef.get(),
+    famRef.collection('devices').get(),
+    // 買餸日提示用（淨係朝早要）
+    MODE === 'daily' ? famRef.collection('recipes').get() : null,
+  ]);
 
   const members = membersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const devices = pushSnap.docs.map((d) => ({ key: d.id, ...d.data() }));
+  let devices = pushSnap.docs.map((d) => ({ key: d.id, ...d.data() }));
+  // 已鎖好嘅家庭：只發俾仲有登記嘅機；被移除嘅機清走 token
+  if (famSnap.data()?.joinCode) {
+    const registered = new Set(devicesSnap.docs.map((d) => d.id));
+    const removed = devices.filter((dv) => dv.uid && !registered.has(dv.uid));
+    for (const dv of removed) await famRef.collection('push').doc(dv.key).delete().catch(() => {});
+    devices = devices.filter((dv) => dv.uid && registered.has(dv.uid));
+    if (removed.length) console.log(`  removed ${removed.length} token(s) of removed devices`);
+  }
   const dinners = Object.fromEntries(dinnersSnap.docs.map((d) => [d.id, d.data()]));
   const recipes = recipesSnap ? recipesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
   const marketDays = famSnap?.data()?.marketDays || [];

@@ -22,6 +22,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # 每次發佈都當新版本：app 會提示「有新版本，撳更新」
+      - name: Stamp service worker version
+        run: |
+          sed -i -E "s/^const CACHE = '[^']*';/const CACHE = 'fsl-${GITHUB_SHA::8}';/" public/sw.js
+          grep -n "^const CACHE" public/sw.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
