@@ -1,5 +1,5 @@
 // 離線用：先用快取開 app，背景再攞新版本。Firestore 請求唔經呢度。
-const CACHE = 'fsl-v4';
+const CACHE = 'fsl-v5';
 const SHELL = [
   './',
   'index.html',
@@ -10,6 +10,10 @@ const SHELL = [
   'translate.js',
   'dictionary.js',
   'image.js',
+  'ui.js',
+  'dates.js',
+  'dinner.js',
+  'dinner-view.js',
   'firebase-config.js',
   'vendor/firebase.js',
   'manifest.webmanifest',
@@ -42,6 +46,48 @@ self.addEventListener('fetch', (e) => {
         })
         .catch(() => cached);
       return cached || fresh;
+    }),
+  );
+});
+
+// ---------- 推送通知（由 GitHub Actions 經 Firebase Cloud Messaging 發出） ----------
+// 訊息係 data-only：{ title, body, url, tag, actions: JSON [{action, title, url}] }
+
+self.addEventListener('push', (e) => {
+  let payload = {};
+  try {
+    payload = e.data ? e.data.json() : {};
+  } catch {
+    payload = { data: { title: e.data?.text() } };
+  }
+  const data = payload.data || payload.notification || payload;
+  let actions = [];
+  try {
+    actions = JSON.parse(data.actions || '[]');
+  } catch {}
+  e.waitUntil(
+    self.registration.showNotification(data.title || '🍚', {
+      body: data.body || '',
+      tag: data.tag || 'fsl',
+      renotify: true,
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      data: { url: data.url || './', actions },
+      actions: actions.slice(0, 2).map((a) => ({ action: a.action, title: a.title })),
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const { url, actions } = e.notification.data || {};
+  const target = (actions || []).find((a) => a.action === e.action)?.url || url || './';
+  const full = new URL(target, self.registration.scope).href;
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const win = list.find((c) => c.url.startsWith(self.registration.scope));
+      if (win) return win.navigate(full).then((c) => (c || win).focus());
+      return self.clients.openWindow(full);
     }),
   );
 });

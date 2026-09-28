@@ -57,6 +57,9 @@ async function createFirebaseStore(firebaseConfig) {
   const itemsCol = (fid) => fb.collection(db, 'families', fid, 'items');
   const dictCol = (fid) => fb.collection(db, 'families', fid, 'dict');
   const photosCol = (fid) => fb.collection(db, 'families', fid, 'photos');
+  const membersCol = (fid) => fb.collection(db, 'families', fid, 'members');
+  const dinnersCol = (fid) => fb.collection(db, 'families', fid, 'dinners');
+  const pushCol = (fid) => fb.collection(db, 'families', fid, 'push');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -151,6 +154,58 @@ async function createFirebaseStore(firebaseConfig) {
       for (const pid of ids) batch.delete(fb.doc(photosCol(fid), pid));
       return batch.commit();
     },
+
+    // ---------- 食飯 ----------
+    subscribeMembers(fid, cb, onError) {
+      return fb.onSnapshot(membersCol(fid), (snap) => cb(readDocs(snap)), onError);
+    },
+
+    addMember(fid, member) {
+      const ref = fb.doc(membersCol(fid));
+      fb.setDoc(ref, { ...member, createdAt: fb.serverTimestamp() }).catch(() => {});
+      return ref.id;
+    },
+
+    updateMember(fid, mid, patch) {
+      return fb.updateDoc(fb.doc(membersCol(fid), mid), patch);
+    },
+
+    deleteMember(fid, mid) {
+      return fb.deleteDoc(fb.doc(membersCol(fid), mid));
+    },
+
+    // 由 from 到 to（包括）嘅食飯紀錄：{ 'YYYY-MM-DD': { att: {...} } }
+    subscribeDinners(fid, from, to, cb, onError) {
+      const q = fb.query(dinnersCol(fid), fb.where(fb.documentId(), '>=', from), fb.where(fb.documentId(), '<=', to));
+      return fb.onSnapshot(q, (snap) => cb(Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]))), onError);
+    },
+
+    // entries: [{ date, memberId, rec }]，一次過寫（問卷用）
+    setAttendance(fid, entries) {
+      const batch = fb.writeBatch(db);
+      for (const { date, memberId, rec } of entries) {
+        batch.set(fb.doc(dinnersCol(fid), date), { att: { [memberId]: { ...rec, at: fb.serverTimestamp() } } }, { merge: true });
+      }
+      return batch.commit();
+    },
+
+    savePushToken(fid, key, data) {
+      return fb.setDoc(fb.doc(pushCol(fid), key), { ...data, updatedAt: fb.serverTimestamp() });
+    },
+
+    deletePushToken(fid, key) {
+      return fb.deleteDoc(fb.doc(pushCol(fid), key));
+    },
+
+    // 通知用：攞 FCM token（要喺 firebase-config.js 加 vapidKey）
+    async getPushToken(vapidKey) {
+      if (!vapidKey || !(await fb.isMessagingSupported())) return null;
+      const registration = await navigator.serviceWorker.ready;
+      return fb.getToken(fb.getMessaging(app), { vapidKey, serviceWorkerRegistration: registration });
+    },
+
+    pushConfigured: Boolean(firebaseConfig.vapidKey),
+    vapidKey: firebaseConfig.vapidKey || '',
 
     subscribeDict(fid, cb) {
       return fb.onSnapshot(dictCol(fid), (snap) => cb(snap.docs.map((d) => d.data())), () => cb([]));
@@ -303,6 +358,50 @@ function createLocalStore() {
       for (const pid of ids || []) delete f.photos?.[pid];
       save();
     },
+
+    subscribeMembers(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.members || {}).map(([id, m]) => ({ id, ...m }))));
+    },
+
+    addMember(fid, member) {
+      const id = randomId();
+      const f = fam(fid);
+      f.members = { ...f.members, [id]: { ...member, createdAt: Date.now() } };
+      save();
+      return id;
+    },
+
+    async updateMember(fid, mid, patch) {
+      Object.assign(fam(fid).members[mid], patch);
+      save();
+    },
+
+    async deleteMember(fid, mid) {
+      delete fam(fid).members[mid];
+      save();
+    },
+
+    subscribeDinners(fid, from, to, cb) {
+      return watch(() => cb(Object.fromEntries(Object.entries(fam(fid)?.dinners || {}).filter(([d]) => d >= from && d <= to))));
+    },
+
+    async setAttendance(fid, entries) {
+      const f = fam(fid);
+      f.dinners = f.dinners || {};
+      for (const { date, memberId, rec } of entries) {
+        const doc = (f.dinners[date] = f.dinners[date] || { att: {} });
+        doc.att[memberId] = { ...rec, at: Date.now() };
+      }
+      save();
+    },
+
+    async savePushToken() {},
+    async deletePushToken() {},
+    async getPushToken() {
+      return null;
+    },
+    pushConfigured: false,
+    vapidKey: '',
 
     subscribeDict(fid, cb) {
       return watch(() => cb(Object.values(fam(fid)?.dict || {})));

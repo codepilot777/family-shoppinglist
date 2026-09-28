@@ -1,0 +1,45 @@
+name: Dinner notifications
+
+# 香港時間 = UTC + 8。GitHub 定時工作喺整點好多時會遲，所以提早幾分鐘排。
+on:
+  schedule:
+    - cron: '55 11 * * 0' # 星期日 19:55 HKT：下星期食飯問卷
+    - cron: '55 23 * * *' # 每日 07:55 HKT：今晚返唔返確認
+    - cron: '5 8 * * *' # 每日 16:05 HKT：截數人數（俾負責煮飯嘅人）
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'weekly / daily / cutoff'
+        type: choice
+        options: [daily, weekly, cutoff]
+        default: daily
+      dry_run:
+        description: '只顯示會發咩，唔真係發'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dinner-notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --omit=dev
+        working-directory: scripts/notify
+      - run: node scripts/notify/messages.test.mjs
+      - run: node scripts/notify/notify.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          MODE: ${{ inputs.mode || (github.event.schedule == '55 11 * * 0' && 'weekly') || (github.event.schedule == '5 8 * * *' && 'cutoff') || 'daily' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          APP_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/

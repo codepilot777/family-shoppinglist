@@ -72,6 +72,43 @@ service cloud.firestore {
         && request.resource.data.data.matches('^data:image/jpeg;base64,.*');
     }
 
+    // 食飯：成員
+    match /families/{familyId}/members/{memberId} {
+      allow read, delete: if signedIn();
+      allow create, update: if signedIn()
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['name', 'proxy', 'eats', 'pattern', 'lastConfirmedWeek', 'createdAt'])
+        && shortString(request.resource.data.name, 20)
+        && request.resource.data.name.size() > 0
+        && request.resource.data.get('proxy', false) is bool
+        && request.resource.data.get('eats', true) is bool
+        && request.resource.data.get('pattern', []) is list
+        && request.resource.data.get('pattern', []).size() <= 7
+        && shortString(request.resource.data.get('lastConfirmedWeek', ''), 10);
+    }
+
+    // 食飯：每日紀錄（doc ID = 'YYYY-MM-DD'），att = { 成員ID: {home, guests, note, by, late, at} }
+    match /families/{familyId}/dinners/{date} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && familyExists(familyId)
+        && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.keys().hasOnly(['att'])
+        && request.resource.data.att is map
+        && request.resource.data.att.size() <= 30;
+    }
+
+    // 通知：每部機一個 FCM token（由 GitHub Actions 讀取再發通知）
+    match /families/{familyId}/push/{tokenId} {
+      allow delete: if signedIn();
+      allow create, update: if signedIn()
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['token', 'memberId', 'lang', 'updatedAt'])
+        && shortString(request.resource.data.token, 4096)
+        && shortString(request.resource.data.memberId, 40)
+        && request.resource.data.lang in ['zh', 'en', 'id'];
+    }
+
     // 家庭字典：屋企人改過嘅翻譯，下次自動用
     match /families/{familyId}/dict/{entryId} {
       allow read: if signedIn();
