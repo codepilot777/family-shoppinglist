@@ -60,6 +60,7 @@ async function createFirebaseStore(firebaseConfig) {
   const membersCol = (fid) => fb.collection(db, 'families', fid, 'members');
   const dinnersCol = (fid) => fb.collection(db, 'families', fid, 'dinners');
   const pushCol = (fid) => fb.collection(db, 'families', fid, 'push');
+  const recipesCol = (fid) => fb.collection(db, 'families', fid, 'recipes');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -84,6 +85,45 @@ async function createFirebaseStore(firebaseConfig) {
 
     renameFamily(fid, name) {
       return fb.updateDoc(familyRef(fid), { name });
+    },
+
+    // 例如 { marketDays: [1, 3, 6], marketListId }
+    updateFamily(fid, patch) {
+      return fb.updateDoc(familyRef(fid), patch);
+    },
+
+    // ---------- 菜式 ----------
+    subscribeRecipes(fid, cb, onError) {
+      return fb.onSnapshot(recipesCol(fid), (snap) => cb(readDocs(snap)), onError);
+    },
+
+    addRecipe(fid, recipe) {
+      const ref = fb.doc(recipesCol(fid));
+      fb.setDoc(ref, { ...recipe, createdAt: fb.serverTimestamp() }).catch(() => {});
+      return ref.id;
+    },
+
+    async addRecipes(fid, recipes) {
+      const batch = fb.writeBatch(db);
+      for (const r of recipes) batch.set(fb.doc(recipesCol(fid)), { ...r, createdAt: fb.serverTimestamp() });
+      return batch.commit();
+    },
+
+    updateRecipe(fid, rid, patch) {
+      return fb.updateDoc(fb.doc(recipesCol(fid), rid), patch);
+    },
+
+    deleteRecipe(fid, rid) {
+      return fb.deleteDoc(fb.doc(recipesCol(fid), rid));
+    },
+
+    setRecipeTranslation(fid, rid, lang, text, auto) {
+      return fb.updateDoc(fb.doc(recipesCol(fid), rid), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
+    },
+
+    // 某一晚揀咗邊啲菜式
+    setDishes(fid, date, dishes) {
+      return fb.setDoc(fb.doc(dinnersCol(fid), date), { dishes }, { merge: true });
     },
 
     subscribeFamily(fid, cb) {
@@ -285,8 +325,60 @@ function createLocalStore() {
       save();
     },
 
+    async updateFamily(fid, patch) {
+      Object.assign(fam(fid), patch);
+      save();
+    },
+
     subscribeFamily(fid, cb) {
-      return watch(() => cb(fam(fid) ? { id: fid, name: fam(fid).name } : null));
+      return watch(() => {
+        const f = fam(fid);
+        cb(f ? { id: fid, name: f.name, marketDays: f.marketDays, marketListId: f.marketListId } : null);
+      });
+    },
+
+    subscribeRecipes(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.recipes || {}).map(([id, r]) => ({ id, ...r }))));
+    },
+
+    addRecipe(fid, recipe) {
+      const id = randomId();
+      const f = fam(fid);
+      f.recipes = { ...f.recipes, [id]: { ...recipe, createdAt: Date.now() } };
+      save();
+      return id;
+    },
+
+    async addRecipes(fid, recipes) {
+      const f = fam(fid);
+      f.recipes = f.recipes || {};
+      recipes.forEach((r, i) => (f.recipes[randomId()] = { ...r, createdAt: Date.now() + i }));
+      save();
+    },
+
+    async updateRecipe(fid, rid, patch) {
+      Object.assign(fam(fid).recipes[rid], patch);
+      save();
+    },
+
+    async deleteRecipe(fid, rid) {
+      delete fam(fid).recipes[rid];
+      save();
+    },
+
+    async setRecipeTranslation(fid, rid, lang, text, auto) {
+      const r = fam(fid).recipes?.[rid];
+      if (!r) return;
+      r.tr = { ...r.tr, [lang]: text };
+      r.trAuto = { ...r.trAuto, [lang]: auto };
+      save();
+    },
+
+    async setDishes(fid, date, dishes) {
+      const f = fam(fid);
+      f.dinners = f.dinners || {};
+      f.dinners[date] = { att: {}, ...f.dinners[date], dishes };
+      save();
     },
 
     subscribeLists(fid, cb) {

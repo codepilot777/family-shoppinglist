@@ -348,6 +348,37 @@ body.dinner-mode #app { padding-bottom: calc(2rem + env(safe-area-inset-bottom))
 .add-member { margin: 0.5rem 0 0; }
 .add-member .btn { flex: none; }
 
+/* ---------- 🍽 菜單 / 🧺 買餸 ---------- */
+.dishes-line {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; width: 100%;
+  text-align: left; border: 1px dashed var(--line); border-radius: 0.75rem; background: var(--surface-2);
+  padding: 0.625rem 0.75rem; margin-bottom: 0.875rem; font-weight: 600;
+}
+.dishes-meta { margin-top: 0.125rem; }
+.card.market h2 { font-size: 1.125rem; margin: 0; }
+.card.market.today-market { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.card.market p { margin: 0.5rem 0 0.75rem; }
+.block-line { display: block; }
+.dish-list { display: grid; gap: 0.25rem; margin: 0.75rem 0; max-height: 50vh; overflow-y: auto; }
+.dish-row, .market-row {
+  display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.625rem 0.25rem; border-bottom: 1px solid var(--line);
+}
+.dish-row input, .market-row input { width: 1.375rem; height: 1.375rem; flex: none; margin-top: 0.125rem; accent-color: var(--accent); }
+.market-row.muted { opacity: 0.6; }
+.market-rows { margin-bottom: 0.875rem; }
+.plan { list-style: none; padding: 0; margin: 0 0 0.75rem; display: grid; gap: 0.25rem; font-size: 0.9375rem; }
+.ing-row {
+  display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 0.375rem; align-items: center; margin-bottom: 0.375rem;
+}
+.ing-row .input { min-height: 2.5rem; padding: 0.375rem 0.5rem; }
+.ing-row .check-row { margin: 0; white-space: nowrap; }
+@media (max-width: 30rem) {
+  .ing-row { grid-template-columns: 1fr auto auto; }
+  .ing-row [name="ing-amount"] { grid-column: 1 / 2; grid-row: 2; }
+}
+.days-pick { margin: 0.75rem 0 1rem; }
+.recipe-list { margin-bottom: 0.5rem; max-height: 55vh; overflow-y: auto; }
+
 /* ---------- 📲 安裝 ---------- */
 .install-card { margin-bottom: 1rem; text-align: center; }
 .install-card p { margin: 0.375rem 0 0; }

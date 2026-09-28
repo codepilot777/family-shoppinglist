@@ -30,6 +30,15 @@ assert.match(JSON.parse(son.data.actions)[0].url, /set=home&date=2026-09-29&m=so
 const cook = msgs.find((m) => m.key === 'k3');
 assert.equal(cook.data.title, '🍚 Malam ini sementara 4 orang'); // 爸爸 + 2 客 + 婆婆（阿仔唔返，Siti 唔計）
 assert.match(cook.data.body, /阿仔/);
+assert.doesNotMatch(cook.data.body, /🧺/); // 冇設定買餸日 → 唔提
+
+// 買餸日（星期二）：提負責煮飯嘅人今日要買幾多樣（唔計常備）
+const recipes = [{ id: 'r1', name: '番茄炒蛋', ingredients: [{ name: '番茄' }, { name: '雞蛋' }, { name: '鹽', staple: true }] }];
+const withMenu = { ...dinners, '2026-09-29': { ...dinners['2026-09-29'], dishes: ['r1'] } };
+msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners: withMenu, devices, appUrl, marketDays: [2, 5], recipes });
+assert.match(msgs.find((m) => m.key === 'k3').data.body, /Hari belanja: 2 bahan/);
+msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners: withMenu, devices, appUrl, marketDays: [3], recipes });
+assert.doesNotMatch(msgs.find((m) => m.key === 'k3').data.body, /🧺/); // 今日唔係買餸日
 
 // 16:05 截數：只發俾負責煮飯嘅人
 msgs = buildMessages({ mode: 'cutoff', today: '2026-09-29', members, dinners, devices, appUrl });

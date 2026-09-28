@@ -297,6 +297,7 @@ function enterFamily(fid) {
     s.subscribeFamily(fid, (fam) => {
       state.family = fam;
       renderTitle();
+      renderDinner(); // 買餸日設定喺 family doc
     }),
     s.subscribeLists(
       fid,
