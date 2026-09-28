@@ -2,27 +2,11 @@ import { createStore } from './store.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
 import { compressImage, PHOTO_OPTS, THUMB_OPTS, MAX_PHOTOS } from './image.js';
+import { $, esc, ls, clean, toast, fail, timeAgo, openDialog, confirmDialog } from './ui.js';
+import { initDinner, renderDinner, dinnerOnEnterFamily, handleDinnerParams, refreshPushToken } from './dinner-view.js';
 
 // ---------- 小工具 ----------
 
-const $ = (sel, root = document) => root.querySelector(sel);
-const esc = (s) =>
-  String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const ls = {
-  get(k) {
-    try {
-      return localStorage.getItem(k);
-    } catch {
-      return null;
-    }
-  },
-  set(k, v) {
-    try {
-      v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v);
-    } catch {}
-  },
-};
-const clean = (s, max) => String(s ?? '').trim().replace(/\s+/g, ' ').slice(0, max);
 const catOf = (item) => (CATEGORY_IDS.includes(item.category) ? item.category : 'other');
 const catLabel = (id) => `${CATEGORY_ICONS[id]} ${t(`cat_${id}`)}`;
 // 清單名如果係常見地方（超市、街市…）就跟語言顯示
@@ -30,35 +14,6 @@ const listLabel = (l) => lookup(l.name)?.[getLang()] || l.name;
 const isWish = (l) => l?.kind === 'wish';
 const currentList = () => state.lists.find((l) => l.id === state.listId);
 const safeUrl = (u) => (/^https?:\/\//i.test(u || '') ? u : '');
-
-let toastTimer;
-function toast(msg, action) {
-  const el = $('#toast');
-  el.innerHTML = `<span>${esc(msg)}</span>${action ? `<button type="button">${esc(action.label)}</button>` : ''}`;
-  if (action)
-    el.querySelector('button').onclick = () => {
-      el.classList.remove('show');
-      action.run();
-    };
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), action ? 5000 : 2500);
-}
-
-function fail(err) {
-  console.error(err);
-  const msg = err?.code === 'permission-denied' ? t('permissionDenied') : err?.message || String(err);
-  toast(t('errorPrefix', { msg }));
-}
-
-function timeAgo(ms) {
-  if (!ms) return '';
-  const s = Math.round((Date.now() - ms) / 1000);
-  if (s < 60) return t('justNow');
-  if (s < 3600) return t('minutesAgo', { n: Math.floor(s / 60) });
-  if (s < 86400) return t('hoursAgo', { n: Math.floor(s / 3600) });
-  return t('daysAgo', { n: Math.floor(s / 86400) });
-}
 
 // ---------- 狀態 ----------
 
@@ -135,7 +90,9 @@ async function boot() {
 
   const params = new URLSearchParams(location.search);
   const invite = clean(params.get('f'), 40);
-  if (invite) window.history.replaceState(null, '', location.pathname);
+  if (params.get('view') === 'dinner') ls.set('fsl-view', 'dinner');
+  if (location.search) window.history.replaceState(null, '', location.pathname);
+  initDinner({ state });
 
   try {
     state.store = await createStore();
@@ -148,6 +105,7 @@ async function boot() {
   if (invite && invite !== state.familyId) return renderSetup({ invite });
   if (!state.me || !state.familyId) return renderSetup({});
   enterFamily(state.familyId);
+  handleDinnerParams(params);
 }
 
 function renderFatal(err) {
@@ -350,7 +308,20 @@ function enterFamily(fid) {
       setFamilyDictionary(entries);
       render();
     }),
+    ...dinnerOnEnterFamily(fid),
   ];
+}
+
+function showView(view) {
+  const dinner = view === 'dinner';
+  ls.set('fsl-view', dinner ? 'dinner' : 'shop');
+  document.querySelectorAll('.views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+  $('#shop-view')?.classList.toggle('hidden', dinner);
+  $('.addbar')?.classList.toggle('hidden', dinner);
+  $('#dinner')?.classList.toggle('hidden', !dinner);
+  document.body.classList.toggle('dinner-mode', dinner);
+  if (dinner) renderDinner();
+  else render();
 }
 
 function selectList(id, rerender = true) {
@@ -378,12 +349,19 @@ function renderShell() {
       <button class="icon-btn" id="invite-btn" aria-label="${esc(t('invite'))}" title="${esc(t('invite'))}">👪</button>
       <button class="icon-btn" id="settings-btn" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">⚙️</button>
     </header>
+    <nav class="views">
+      <button data-view="shop">${esc(t('viewShop'))}</button>
+      <button data-view="dinner">${esc(t('viewDinner'))}</button>
+    </nav>
+    <div id="shop-view">
     <nav class="tabs" id="tabs" role="tablist" aria-label="${esc(t('lists'))}"></nav>
     <main id="list"></main>
+    </div>
+    <main id="dinner" class="hidden"></main>
     <div class="addbar">
       <form id="add-form" autocomplete="off">
         ${SpeechRecognition ? `<button type="button" class="btn mic" id="mic" aria-label="${esc(t('voice'))}" title="${esc(t('voice'))}">🎤</button>` : ''}
-        <input class="input name-input" id="add-name" maxlength="60" placeholder="${esc(t('addPlaceholder'))}" list="history" enterkeyhint="done" aria-label="${esc(t('itemName'))}">
+        <input class="input name-input" id="add-name" maxlength="500" placeholder="${esc(t('addPlaceholder'))}" list="history" enterkeyhint="done" aria-label="${esc(t('itemName'))}">
         <button type="button" class="btn icon-square" id="add-photo" aria-label="${esc(t('addPhoto'))}" title="${esc(t('addPhoto'))}">📷</button>
         <input class="input qty-input" id="add-qty" maxlength="12" placeholder="${esc(t('qty'))}" aria-label="${esc(t('qty'))}">
         <button class="btn primary">${esc(t('add'))}</button>
@@ -394,6 +372,8 @@ function renderShell() {
 
   renderTitle();
   $('#invite-btn').onclick = openInvite;
+  document.querySelectorAll('.views [data-view]').forEach((b) => (b.onclick = () => showView(b.dataset.view)));
+  showView(ls.get('fsl-view') || 'shop');
   $('#settings-btn').onclick = openSettings;
   $('#add-form').onsubmit = onAdd;
   $('#mic')?.addEventListener('click', startVoice);
@@ -762,34 +742,6 @@ function clearDone() {
 
 // ---------- 對話框 ----------
 
-const dialog = $('#dialog');
-function openDialog(html, setup) {
-  if (dialog.open) dialog.close();
-  dialog.innerHTML = html;
-  setup?.(dialog);
-  dialog.showModal();
-  dialog.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => dialog.close()));
-}
-dialog.addEventListener('click', (e) => {
-  if (e.target === dialog) dialog.close();
-});
-
-function confirmDialog(message, okLabel, onOk) {
-  openDialog(
-    `<h2>${esc(message)}</h2>
-    <div class="actions"><span class="spacer"></span>
-      <button class="btn" data-close>${esc(t('cancel'))}</button>
-      <button class="btn primary" id="ok">${esc(okLabel)}</button>
-    </div>`,
-    (d) => {
-      $('#ok', d).onclick = () => {
-        d.close();
-        onOk();
-      };
-    },
-  );
-}
-
 function openEditItem(item) {
   const src = item.lang || 'zh';
   const others = ITEM_LANGS.filter((l) => l !== src);
@@ -1042,6 +994,7 @@ function openSettings() {
           changeLang(lang);
           renderShell();
           render();
+          refreshPushToken();
         }
         toast(t('saved'));
       };

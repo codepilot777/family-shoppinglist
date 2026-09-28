@@ -19,4 +19,6 @@ export {
   getDocs,
   writeBatch,
   serverTimestamp,
+  documentId,
 } from 'firebase/firestore';
+export { getMessaging, getToken, deleteToken, isSupported as isMessagingSupported } from 'firebase/messaging';

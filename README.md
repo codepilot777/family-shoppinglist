@@ -13,6 +13,7 @@
 - **長者友善**：大字模式（標準／大／特大）、🎤 講嘢輸入
 - **📷 相片**：影低包裝／截圖，買嘅人唔會買錯
 - **🎁 想買清單**：旅行、網購、「見到就幫我買」嘅嘢，有相、價錢、連結，按「幫邊個買」分組
+- **🍚 食飯**：今晚幾多人喺屋企食飯；星期日問卷、每朝確認（唔覆當冇改）、4pm 截數，自動通知 + WhatsApp 後備
 - 免費：GitHub Pages + Firebase 免費方案（屋企用綽綽有餘）
 
 ## 設定（大約 10 分鐘，只需做一次）
@@ -80,6 +81,50 @@ export const firebaseConfig = {
 
 > 已經發布過舊版 `firestore.rules`？呢次加咗相片同清單類型，要再貼新版去 Firebase Console 發布一次。
 
+## 🍚 食飯
+
+撳頂部「🍚 食飯」：
+
+- **今晚 🍚 N 人**：邊個返、邊個唔返、帶幾多客、備註。截數（4pm）後先改嘅會紅色標示。
+- **我今晚**：一撳「返／唔返」、加減客人。
+- **未來幾日**：撳任何一日，可以幫任何人改（例如幫婆婆）。
+- **📝 填下星期**：星期日問卷，已經按「固定規律」預設好，改唔同嘅就得。剔「記住做固定規律」，以後每星期預設咁（例如阿仔逢二唔返）。
+- **👥 成員**：加屋企人。婆婆可以設「由其他人代填」（唔收通知）；姐姐可以唔剔「計入食飯人數」，佢會收到截數人數通知。
+- **💬 WhatsApp 後備**：一撳發問卷或者今晚人數去 WhatsApp group；邊個未填會自動 @ 佢。
+
+| 時間（香港） | 通知 | 收件人 |
+|---|---|---|
+| 星期日 8pm | 下星期食飯問卷 | 未填嘅成員 |
+| 每日 8am | 「你今晚：✅ 返」，Android 可以直接撳「今晚唔返」 | 所有食飯成員 |
+| 每日 8am | 今晚暫時人數 | 負責煮飯嘅人 |
+| 每日 4pm | 截數人數 | 負責煮飯嘅人 |
+
+「唔覆當冇改」：冇撳就維持原本（預設係返屋企食）。
+
+### 開通知（一次性，大約 10 分鐘）
+
+通知由 GitHub Actions 定時經 Firebase Cloud Messaging 發出，**唔使升級 Firebase 付費方案**。
+
+1. **Web Push key**：Firebase Console → ⚙️ 專案設定 → **Cloud Messaging** → 最底「Web Push 憑證」→ **Generate key pair**，複製嗰條 key，喺 `public/firebase-config.js` 入面加一行：
+   ```js
+   const firebaseConfig = {
+     apiKey: "…",
+     …
+     vapidKey: "貼喺度",
+   };
+   ```
+2. **Service account**：⚙️ 專案設定 → **服務帳戶 (Service accounts)** → **產生新的私密金鑰**，會下載一個 `.json`。
+   去 GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**：
+   - Name：`FIREBASE_SERVICE_ACCOUNT`
+   - Secret：成個 `.json` 檔案嘅內容
+   > 呢個檔案係密碼，**唔好** commit 入 repo，用完可以刪走。
+3. 將最新 `firestore.rules` 再貼去 Firebase Console 發布。
+4. 每個人：打開 app → 🍚 食飯 → 揀返自己 → **🔔 開通知**。
+   - iPhone：要先「加至主畫面」，由主畫面打開先開到通知（iOS 16.4 或以上）。
+5. 測試：GitHub → **Actions → Dinner notifications → Run workflow**，揀 `daily`，`dry_run` 剔住會顯示會發咩；唔剔就真係發。
+
+> GitHub 定時工作有時會遲 10–30 分鐘。repo 60 日冇改動，GitHub 會暫停定時工作，會 email 通知你，撳一下就恢復。
+
 ## 安全性
 
 - 每個家庭有一個 20 位隨機代碼，只有收到邀請連結／代碼嘅人先讀寫到。
@@ -114,9 +159,13 @@ public/
   translate.js          貨品名翻譯同分類
   dictionary.js         內置貨品字典
   image.js              相片壓縮
+  dinner-view.js        🍚 食飯頁
+  dinner.js / dates.js  食飯人數計算、香港時間（app 同通知 script 共用）
+  ui.js                 共用介面小工具
   firebase-config.js    ← 你要填嘅設定
   sw.js                 離線快取
   vendor/firebase.js    Firebase SDK
 firestore.rules         Firestore 安全規則
-.github/workflows/      自動發佈到 GitHub Pages
+scripts/notify/         食飯通知 script（GitHub Actions 定時執行）
+.github/workflows/      自動發佈到 GitHub Pages、定時發通知
 ```
