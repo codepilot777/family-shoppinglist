@@ -1,4 +1,3 @@
-import { firebaseConfig } from './firebase-config.js';
 
 const ID_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
 
@@ -10,15 +9,29 @@ export function randomId(len = 20) {
 // Firestore doc ID 唔可以有「/」，亦唔可以係「.」「..」
 const dictId = (key) => encodeURIComponent(String(key).trim().toLowerCase()).slice(0, 400).replace(/^\.*$/, (m) => `_${m}`);
 
-export const isConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+// 用文字方式讀 firebase-config.js，咁無論有冇 `export`、定係成段 Firebase 範例貼晒入去都讀得到
+async function loadFirebaseConfig() {
+  const res = await fetch('firebase-config.js', { cache: 'no-cache' });
+  if (!res.ok) return {};
+  const m = (await res.text()).match(/firebaseConfig\s*=\s*(\{[\s\S]*?\})/);
+  if (!m) return {};
+  try {
+    return new Function(`return (${m[1]});`)() || {};
+  } catch {
+    const err = new Error('firebase-config.js 格式唔啱');
+    err.code = 'config/invalid';
+    throw err;
+  }
+}
 
 export async function createStore() {
-  return isConfigured ? createFirebaseStore() : createLocalStore();
+  const config = await loadFirebaseConfig();
+  return config.apiKey && config.projectId ? createFirebaseStore(config) : createLocalStore();
 }
 
 // ---------- Firebase (即時同步) ----------
 
-async function createFirebaseStore() {
+async function createFirebaseStore(firebaseConfig) {
   const fb = await import('./vendor/firebase.js');
   const app = fb.initializeApp(firebaseConfig);
   const auth = fb.getAuth(app);
