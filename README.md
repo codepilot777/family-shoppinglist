@@ -7,7 +7,7 @@
 - 自動分類（蔬菜水果、肉類海鮮、奶類同蛋…），可以自己改
 - 見到邊個加、邊個買咗
 - 離線都用得，有網再自動同步
-- 可以「加至主畫面」，用起上嚟好似 app 咁
+- **📲 安裝到主畫面**：Android 一撳就裝；iPhone 有圖文步驟，用起上嚟好似 app 咁
 - **三種語言**：繁體中文、English、Bahasa Indonesia，每部機自己揀
 - **貨品名自動翻譯**：婆婆打「菜心」，姐姐部機見到「sawi hijau (choy sum)」；姐姐打「telur」，婆婆見到「雞蛋」
 - **長者友善**：大字模式（標準／大／特大）、🎤 講嘢輸入
@@ -54,7 +54,8 @@ export const firebaseConfig = {
 1. 自己打開網址 → 填名 → **建立新家庭**。
 2. 撳右上角 👪 → **分享連結**，WhatsApp 俾屋企人。
 3. 佢哋打開連結、填個名就加入咗。
-4. 提示大家喺手機瀏覽器揀 **加至主畫面**（iPhone：Safari 分享 → 加至主畫面）。
+4. 叫大家撳 app 頂部嘅 **📲** 安裝到主畫面：Android 會直接彈出安裝；iPhone 會顯示步驟（Safari 分享 ⬆️ → 加至主畫面）。
+   - iPhone 主畫面 app 同 Safari 資料分開，所以**建議 iPhone 用戶先安裝，再由主畫面打開加入家庭**（登入畫面都有提示）。
 
 ## 多語言同翻譯
 
@@ -162,6 +163,7 @@ public/
   dinner-view.js        🍚 食飯頁
   dinner.js / dates.js  食飯人數計算、香港時間（app 同通知 script 共用）
   ui.js                 共用介面小工具
+  install.js            📲 安裝到主畫面
   firebase-config.js    ← 你要填嘅設定
   sw.js                 離線快取
   vendor/firebase.js    Firebase SDK

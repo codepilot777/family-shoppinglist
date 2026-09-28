@@ -1,5 +1,5 @@
 // 離線用：先用快取開 app，背景再攞新版本。Firestore 請求唔經呢度。
-const CACHE = 'fsl-v6';
+const CACHE = 'fsl-v7';
 const SHELL = [
   './',
   'index.html',
@@ -11,6 +11,7 @@ const SHELL = [
   'dictionary.js',
   'image.js',
   'ui.js',
+  'install.js',
   'dates.js',
   'dinner.js',
   'dinner-view.js',
