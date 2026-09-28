@@ -1,7 +1,7 @@
 {
-  "name": "屋企購物清單",
-  "short_name": "購物清單",
-  "description": "屋企人一齊用嘅購物清單，即時同步",
+  "name": "屋企通",
+  "short_name": "屋企通",
+  "description": "買嘢、食飯、菜單，一家人即時同步",
   "lang": "zh-Hant-HK",
   "start_url": "./",
   "scope": "./",
