@@ -1,6 +1,7 @@
 import { createStore } from './store.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
+import { compressImage, PHOTO_OPTS, THUMB_OPTS, MAX_PHOTOS } from './image.js';
 
 // ---------- 小工具 ----------
 
@@ -26,6 +27,9 @@ const catOf = (item) => (CATEGORY_IDS.includes(item.category) ? item.category : 
 const catLabel = (id) => `${CATEGORY_ICONS[id]} ${t(`cat_${id}`)}`;
 // 清單名如果係常見地方（超市、街市…）就跟語言顯示
 const listLabel = (l) => lookup(l.name)?.[getLang()] || l.name;
+const isWish = (l) => l?.kind === 'wish';
+const currentList = () => state.lists.find((l) => l.id === state.listId);
+const safeUrl = (u) => (/^https?:\/\//i.test(u || '') ? u : '');
 
 let toastTimer;
 function toast(msg, action) {
@@ -380,8 +384,10 @@ function renderShell() {
       <form id="add-form" autocomplete="off">
         ${SpeechRecognition ? `<button type="button" class="btn mic" id="mic" aria-label="${esc(t('voice'))}" title="${esc(t('voice'))}">🎤</button>` : ''}
         <input class="input name-input" id="add-name" maxlength="60" placeholder="${esc(t('addPlaceholder'))}" list="history" enterkeyhint="done" aria-label="${esc(t('itemName'))}">
+        <button type="button" class="btn icon-square" id="add-photo" aria-label="${esc(t('addPhoto'))}" title="${esc(t('addPhoto'))}">📷</button>
         <input class="input qty-input" id="add-qty" maxlength="12" placeholder="${esc(t('qty'))}" aria-label="${esc(t('qty'))}">
         <button class="btn primary">${esc(t('add'))}</button>
+        <input type="file" id="photo-input" accept="image/*" hidden>
       </form>
       <datalist id="history"></datalist>
     </div>`;
@@ -391,6 +397,8 @@ function renderShell() {
   $('#settings-btn').onclick = openSettings;
   $('#add-form').onsubmit = onAdd;
   $('#mic')?.addEventListener('click', startVoice);
+  $('#add-photo').onclick = () => $('#photo-input').click();
+  $('#photo-input').onchange = onAddPhoto;
   $('#add-name').addEventListener('focus', fillHistory, { once: true });
 
   $('#tabs').onclick = (e) => {
@@ -407,6 +415,8 @@ function renderShell() {
     const item = state.items.find((i) => i.id === row.dataset.id);
     if (!item) return;
     if (e.target.closest('.more')) openEditItem(item);
+    else if (e.target.closest('.thumb-btn')) openPhotos(item);
+    else if (e.target.closest('.link-out')) return; // 由 <a> 自己處理
     else toggleItem(item);
   };
 }
@@ -430,13 +440,16 @@ function render() {
     state.lists
       .map(
         (l) =>
-          `<button class="tab" role="tab" data-list="${esc(l.id)}" aria-selected="${l.id === state.listId}">${esc(listLabel(l))}${
+          `<button class="tab" role="tab" data-list="${esc(l.id)}" aria-selected="${l.id === state.listId}">${isWish(l) ? '🎁 ' : ''}${esc(listLabel(l))}${
             pending(l.id) ? `<span class="count">${pending(l.id)}</span>` : ''
           }</button>`,
       )
       .join('') + `<button class="tab add" id="add-list" aria-label="${esc(t('newList'))}">${esc(t('newListTab'))}</button>`;
 
   $('#add-form')?.classList.toggle('hidden', !state.listId);
+  const list0 = currentList();
+  const addName = $('#add-name');
+  if (addName) addName.placeholder = isWish(list0) ? t('wishPlaceholder') : t('addPlaceholder');
 
   if (!state.listId) {
     list.innerHTML = `<div class="empty"><div class="big">🗒️</div><p>${esc(t('noLists'))}</p>
@@ -449,16 +462,29 @@ function render() {
   const done = items.filter((i) => i.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
   ensureTranslations(items);
 
+  const wish = isWish(list0);
   if (!items.length) {
-    list.innerHTML = `<div class="empty"><div class="big">🛒</div><p>${esc(t('emptyList'))}<br><span class="small">${esc(t('emptyListHint'))}</span></p></div>`;
+    list.innerHTML = wish
+      ? `<div class="empty"><div class="big">🎁</div><p>${esc(t('emptyWish'))}</p></div>`
+      : `<div class="empty"><div class="big">🛒</div><p>${esc(t('emptyList'))}<br><span class="small">${esc(t('emptyListHint'))}</span></p></div>`;
     return;
   }
 
   let html = '';
-  for (const cat of CATEGORY_IDS) {
-    const group = todo.filter((i) => catOf(i) === cat).sort((a, b) => a.createdAt - b.createdAt);
-    if (!group.length) continue;
-    html += `<h2 class="group-title">${esc(catLabel(cat))}</h2><ul class="items">${group.map(itemRow).join('')}</ul>`;
+  const byCreated = (a, b) => a.createdAt - b.createdAt;
+  if (wish) {
+    // 想買清單：按「幫邊個買」分組
+    const people = [...new Set(todo.map((i) => i.forWho || ''))].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
+    for (const p of people) {
+      const group = todo.filter((i) => (i.forWho || '') === p).sort(byCreated);
+      html += `<h2 class="group-title">🙋 ${esc(p ? t('forWhoLabel', { name: p }) : t('anyone'))}</h2><ul class="items wish">${group.map(itemRow).join('')}</ul>`;
+    }
+  } else {
+    for (const cat of CATEGORY_IDS) {
+      const group = todo.filter((i) => catOf(i) === cat).sort(byCreated);
+      if (!group.length) continue;
+      html += `<h2 class="group-title">${esc(catLabel(cat))}</h2><ul class="items">${group.map(itemRow).join('')}</ul>`;
+    }
   }
   if (!todo.length) html += `<div class="empty"><div class="big">🎉</div><p>${esc(t('allDone'))}</p></div>`;
   if (done.length) {
@@ -471,9 +497,18 @@ function render() {
 
 function itemRow(i) {
   const { text, original, auto } = displayName(i);
+  const wish = isWish(state.lists.find((l) => l.id === i.listId));
   const meta = i.done
     ? `${esc(t('boughtBy', { name: i.doneBy || '' }))} · ${esc(timeAgo(i.doneAt))}`
-    : [i.note && esc(i.note), i.addedBy && esc(t('addedBy', { name: i.addedBy }))].filter(Boolean).join(' · ');
+    : [
+        i.price && `<span class="price">${esc(i.price)}</span>`,
+        i.note && esc(i.note),
+        !wish && i.forWho && esc(`🙋 ${t('forWhoLabel', { name: i.forWho })}`),
+        i.addedBy && esc(t('addedBy', { name: i.addedBy })),
+      ]
+        .filter(Boolean)
+        .join(' · ');
+  const link = safeUrl(i.link);
   return `<li class="item ${i.done ? 'done' : ''}" data-id="${esc(i.id)}">
     <button class="toggle" aria-pressed="${!!i.done}">
       <span class="check" aria-hidden="true">✓</span>
@@ -483,6 +518,14 @@ function itemRow(i) {
         ${meta ? `<div class="meta">${meta}</div>` : ''}
       </span>
     </button>
+    ${link ? `<a class="icon-btn link-out" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(t('openLink'))}" title="${esc(t('openLink'))}">🔗</a>` : ''}
+    ${
+      i.thumb
+        ? `<button class="thumb-btn" aria-label="${esc(t('viewPhotos'))}"><img class="thumb" src="${esc(i.thumb)}" alt="">${
+            (i.photos?.length || 0) > 1 ? `<span class="thumb-count">${i.photos.length}</span>` : ''
+          }</button>`
+        : ''
+    }
     <button class="icon-btn more" aria-label="${esc(t('editItem', { name: text }))}">⋯</button>
   </li>`;
 }
@@ -493,9 +536,22 @@ function onAdd(e) {
   e.preventDefault();
   const nameEl = $('#add-name');
   const qtyEl = $('#add-qty');
-  const name = clean(nameEl.value, 60);
+  let name = clean(nameEl.value, 500);
   const qty = clean(qtyEl.value, 12);
   if (!name || !state.listId) return;
+  // 貼連結：用網站名做名稱，連結另外存
+  let link = '';
+  const url = name.match(/https?:\/\/\S+/i)?.[0];
+  if (url) {
+    link = url.slice(0, 500);
+    const rest = clean(name.replace(url, ''), 60);
+    let host = '';
+    try {
+      host = new URL(url).hostname.replace(/^www\./, '');
+    } catch {}
+    name = rest || `🔗 ${host || t('link')}`;
+  }
+  name = name.slice(0, 60);
 
   const n = name.toLowerCase();
   const matches = (i) => i.name.toLowerCase() === n || Object.values(i.tr || {}).some((v) => String(v).toLowerCase() === n);
@@ -507,16 +563,152 @@ function onAdd(e) {
     // 之前買過，放返入未買
     state.store.updateItem(state.familyId, same.id, { done: false, doneBy: null, qty: qty || same.qty, addedBy: state.me }).catch(fail);
   } else {
-    const { lang, tr, category } = prepareItem(name, getLang());
-    state.store
-      .addItem(state.familyId, { listId: state.listId, name, lang, tr, trAuto: {}, qty, note: '', category, addedBy: state.me })
-      .catch(fail);
+    state.store.addItem(state.familyId, newItem(name, { qty, link })).catch(fail);
   }
-  addHistory(name);
+  if (!link) addHistory(name);
   fillHistory();
   nameEl.value = '';
   qtyEl.value = '';
   nameEl.focus();
+}
+
+function newItem(name, extra = {}) {
+  const { lang, tr, category } = prepareItem(name, getLang());
+  // 「🔗 網站名」唔使翻譯
+  if (name.startsWith('🔗')) for (const l of ITEM_LANGS) tr[l] = name;
+  return {
+    listId: state.listId,
+    name,
+    lang,
+    tr,
+    trAuto: {},
+    qty: '',
+    note: '',
+    category,
+    addedBy: state.me,
+    forWho: isWish(currentList()) ? state.me : '',
+    price: '',
+    link: '',
+    photos: [],
+    thumb: '',
+    ...extra,
+  };
+}
+
+// 將一張相變成 { id, thumb }：大相存入 photos，縮圖直接放喺貨品度（清單即刻見到、離線都得）
+async function savePhoto(file) {
+  const [full, thumb] = await Promise.all([compressImage(file, PHOTO_OPTS), compressImage(file, THUMB_OPTS)]);
+  const { id, done } = state.store.addPhoto(state.familyId, full);
+  done.catch(fail);
+  return { id, thumb };
+}
+
+async function onAddPhoto(e) {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file || !state.listId) return;
+  const nameEl = $('#add-name');
+  const qtyEl = $('#add-qty');
+  const name = clean(nameEl.value, 60) || t('photoItemName');
+  const qty = clean(qtyEl.value, 12);
+  toast(t('processingPhoto'));
+  try {
+    const { id, thumb } = await savePhoto(file);
+    state.store.addItem(state.familyId, newItem(name, { qty, photos: [id], thumb })).catch(fail);
+    nameEl.value = '';
+    qtyEl.value = '';
+    $('#toast').classList.remove('show');
+  } catch (err) {
+    console.error(err);
+    toast(t('photoFailed'));
+  }
+}
+
+async function addPhotoToItem(item, file) {
+  if ((item.photos?.length || 0) >= MAX_PHOTOS) return toast(t('maxPhotos', { n: MAX_PHOTOS }));
+  toast(t('processingPhoto'));
+  try {
+    const { id, thumb } = await savePhoto(file);
+    const photos = [...(item.photos || []), id];
+    await state.store.updateItem(state.familyId, item.id, { photos, thumb: item.thumb || thumb }).catch(fail);
+    $('#toast').classList.remove('show');
+    return photos;
+  } catch (err) {
+    console.error(err);
+    toast(t('photoFailed'));
+  }
+}
+
+async function removePhoto(item, pid) {
+  const photos = (item.photos || []).filter((p) => p !== pid);
+  let thumb = item.thumb;
+  if (item.photos?.[0] === pid) {
+    // 第一張冇咗，用下一張整縮圖
+    thumb = '';
+    if (photos[0]) {
+      const next = await state.store.getPhoto(state.familyId, photos[0]).catch(() => null);
+      if (next) thumb = await compressImage(next, THUMB_OPTS).catch(() => '');
+    }
+  }
+  state.store.updateItem(state.familyId, item.id, { photos, thumb }).catch(fail);
+  state.store.deletePhotos(state.familyId, [pid]).catch(fail);
+}
+
+function openPhotos(item) {
+  const latest = () => state.items.find((i) => i.id === item.id) || item;
+  const draw = (d) => {
+    const it = latest();
+    const ids = it.photos || [];
+    $('.photo-list', d).innerHTML = ids.length
+      ? ids
+          .map(
+            (pid) => `<figure class="photo" data-pid="${esc(pid)}">
+              <img alt="" ${pid === ids[0] && it.thumb ? `src="${esc(it.thumb)}"` : ''}>
+              <button type="button" class="btn danger small-btn del-photo">🗑 ${esc(t('deletePhoto'))}</button>
+            </figure>`,
+          )
+          .join('')
+      : `<p class="muted center">—</p>`;
+    $('#more-photo', d).disabled = ids.length >= MAX_PHOTOS;
+    // 逐張載入大相
+    for (const fig of d.querySelectorAll('.photo')) {
+      const img = fig.querySelector('img');
+      state.store
+        .getPhoto(state.familyId, fig.dataset.pid)
+        .then((src) => {
+          if (src) img.src = src;
+          else if (!img.getAttribute('src')) fig.insertAdjacentHTML('afterbegin', `<p class="small muted">${esc(t('photoUnavailable'))}</p>`);
+        })
+        .catch(() => {});
+    }
+  };
+  openDialog(
+    `<h2>📷 ${esc(displayName(item).text)}</h2>
+    <div class="photo-list"></div>
+    <div class="actions">
+      <button type="button" class="btn" id="more-photo">＋ ${esc(t('addPhoto'))}</button>
+      <input type="file" id="more-photo-input" accept="image/*" hidden>
+      <span class="spacer"></span>
+      <button type="button" class="btn primary" data-close>${esc(t('close'))}</button>
+    </div>`,
+    (d) => {
+      draw(d);
+      $('#more-photo', d).onclick = () => $('#more-photo-input', d).click();
+      $('#more-photo-input', d).onchange = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        const photos = await addPhotoToItem(latest(), file);
+        if (photos) setTimeout(() => draw(d), 50);
+      };
+      $('.photo-list', d).onclick = async (e) => {
+        const btn = e.target.closest('.del-photo');
+        if (!btn) return;
+        await removePhoto(latest(), btn.closest('.photo').dataset.pid);
+        setTimeout(() => draw(d), 50);
+      };
+    },
+  );
 }
 
 function startVoice() {
@@ -550,9 +742,13 @@ function toggleItem(item) {
 
 function deleteItem(item) {
   state.store.deleteItem(state.familyId, item.id).catch(fail);
+  // 相片等「復原」時限過咗先刪
+  let undone = false;
+  if (item.photos?.length) setTimeout(() => undone || state.store.deletePhotos(state.familyId, item.photos).catch(fail), 6000);
   toast(t('deleted', { name: displayName(item).text }), {
     label: t('undo'),
     run: () => {
+      undone = true;
       const { id, createdAt, doneAt, done, doneBy, ...rest } = item;
       state.store.addItem(state.familyId, rest).catch(fail);
     },
@@ -608,6 +804,23 @@ function openEditItem(item) {
           .join('')}</select></label>
       </div>
       <label class="field"><span>${esc(t('note'))}</span><input class="input" name="note" maxlength="100" value="${esc(item.note)}"></label>
+      <details class="more-details" ${isWish(currentList()) || item.forWho || item.price || item.link || item.photos?.length ? 'open' : ''}>
+        <summary>📷 ${esc(t('moreDetails'))}</summary>
+        <div class="field"><span>${esc(t('addPhoto'))}</span>
+          <div class="photo-row">
+            ${item.thumb ? `<button type="button" class="thumb-btn" id="edit-view-photos"><img class="thumb" src="${esc(item.thumb)}" alt=""></button>` : ''}
+            <button type="button" class="btn" id="edit-photos">${esc(item.photos?.length ? `${t('viewPhotos')} (${t('photosCount', { n: item.photos.length })})` : `＋ ${t('addPhoto')}`)}</button>
+          </div>
+        </div>
+        <div class="row">
+          <label class="field"><span>${esc(t('forWho'))}</span><input class="input" name="forWho" maxlength="20" value="${esc(item.forWho)}" list="people"></label>
+          <label class="field"><span>${esc(t('price'))}</span><input class="input" name="price" maxlength="20" placeholder="${esc(t('pricePlaceholder'))}" value="${esc(item.price)}"></label>
+        </div>
+        <datalist id="people">${[...new Set(state.items.flatMap((i) => [i.addedBy, i.forWho]).filter(Boolean))]
+          .map((p) => `<option value="${esc(p)}"></option>`)
+          .join('')}</datalist>
+        <label class="field"><span>${esc(t('link'))}</span><input class="input" name="link" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${esc(item.link)}"></label>
+      </details>
       <div class="field"><span>🌐 ${esc(t('translations'))}</span>
         ${others
           .map(
@@ -633,6 +846,9 @@ function openEditItem(item) {
         d.close();
         deleteItem(item);
       };
+      const toPhotos = () => openPhotos(item);
+      $('#edit-photos', d).onclick = toPhotos;
+      $('#edit-view-photos', d)?.addEventListener('click', toPhotos);
       $('#edit-form', d).onsubmit = (e) => {
         e.preventDefault();
         const f = new FormData(e.target);
@@ -666,6 +882,9 @@ function openEditItem(item) {
             trAuto,
             qty: clean(f.get('qty'), 12),
             note: clean(f.get('note'), 100),
+            forWho: clean(f.get('forWho'), 20),
+            price: clean(f.get('price'), 20),
+            link: safeUrl(clean(f.get('link'), 500)),
             category,
             listId: f.get('listId') || item.listId,
           })
@@ -683,11 +902,21 @@ function openEditItem(item) {
   );
 }
 
+function kindPicker(kind) {
+  return `<div class="field"><span>${esc(t('listKind'))}</span>
+    <div class="segmented">${['shop', 'wish']
+      .map((k) => `<label><input type="radio" name="kind" value="${k}" ${k === kind ? 'checked' : ''}><span>${esc(t(k === 'wish' ? 'kindWish' : 'kindShop'))}</span></label>`)
+      .join('')}</div>
+    <span class="small muted">${esc(t('kindWishHint'))}</span>
+  </div>`;
+}
+
 function openNewList() {
   openDialog(
     `<form id="list-form">
       <h2>${esc(t('newList'))}</h2>
       <label class="field"><span>${esc(t('name'))}</span><input class="input" name="name" maxlength="30" required placeholder="${esc(t('newListPlaceholder'))}"></label>
+      ${kindPicker('shop')}
       <div class="actions"><span class="spacer"></span>
         <button type="button" class="btn" data-close>${esc(t('cancel'))}</button>
         <button class="btn primary">${esc(t('create2'))}</button>
@@ -696,11 +925,12 @@ function openNewList() {
     (d) => {
       $('#list-form', d).onsubmit = async (e) => {
         e.preventDefault();
-        const name = clean(new FormData(e.target).get('name'), 30);
+        const f = new FormData(e.target);
+        const name = clean(f.get('name'), 30);
         if (!name) return;
         d.close();
         try {
-          selectList(await state.store.addList(state.familyId, name));
+          selectList(await state.store.addList(state.familyId, name, f.get('kind') === 'wish' ? 'wish' : 'shop'));
         } catch (err) {
           fail(err);
         }
@@ -768,7 +998,8 @@ function openSettings() {
       <label class="field"><span>${esc(t('familyName'))}</span><input class="input" name="family" maxlength="30" required value="${esc(state.family?.name || '')}"></label>
       ${
         list
-          ? `<label class="field"><span>${esc(t('currentListName'))}</span><input class="input" name="list" maxlength="30" required value="${esc(list.name)}"></label>`
+          ? `<label class="field"><span>${esc(t('currentListName'))}</span><input class="input" name="list" maxlength="30" required value="${esc(list.name)}"></label>
+             ${kindPicker(isWish(list) ? 'wish' : 'shop')}`
           : ''
       }
       <div class="actions"><span class="spacer"></span>
@@ -801,7 +1032,11 @@ function openSettings() {
         applyTextSize(f.get('size') || 'normal');
         if (me) rememberName(me);
         if (fam && fam !== state.family?.name) state.store.renameFamily(state.familyId, fam).catch(fail);
-        if (list && ln && ln !== list.name) state.store.renameList(state.familyId, list.id, ln).catch(fail);
+        const kind = f.get('kind') === 'wish' ? 'wish' : 'shop';
+        const listPatch = {};
+        if (list && ln && ln !== list.name) listPatch.name = ln;
+        if (list && kind !== (isWish(list) ? 'wish' : 'shop')) listPatch.kind = kind;
+        if (list && Object.keys(listPatch).length) state.store.updateList(state.familyId, list.id, listPatch).catch(fail);
         d.close();
         if (lang && lang !== getLang()) {
           changeLang(lang);

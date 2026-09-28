@@ -43,6 +43,7 @@ async function createFirebaseStore() {
   const listsCol = (fid) => fb.collection(db, 'families', fid, 'lists');
   const itemsCol = (fid) => fb.collection(db, 'families', fid, 'items');
   const dictCol = (fid) => fb.collection(db, 'families', fid, 'dict');
+  const photosCol = (fid) => fb.collection(db, 'families', fid, 'photos');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -77,18 +78,21 @@ async function createFirebaseStore() {
       return fb.onSnapshot(listsCol(fid), (snap) => cb(readDocs(snap)), onError);
     },
 
-    addList(fid, name) {
-      return fb.addDoc(listsCol(fid), { name, createdAt: fb.serverTimestamp() }).then((r) => r.id);
+    addList(fid, name, kind = 'shop') {
+      return fb.addDoc(listsCol(fid), { name, kind, createdAt: fb.serverTimestamp() }).then((r) => r.id);
     },
 
-    renameList(fid, lid, name) {
-      return fb.updateDoc(fb.doc(listsCol(fid), lid), { name });
+    updateList(fid, lid, patch) {
+      return fb.updateDoc(fb.doc(listsCol(fid), lid), patch);
     },
 
     async deleteList(fid, lid) {
       const items = await fb.getDocs(fb.query(itemsCol(fid), fb.where('listId', '==', lid)));
       const batch = fb.writeBatch(db);
-      items.forEach((d) => batch.delete(d.ref));
+      items.forEach((d) => {
+        batch.delete(d.ref);
+        for (const pid of d.data().photos || []) batch.delete(fb.doc(photosCol(fid), pid));
+      });
       batch.delete(fb.doc(listsCol(fid), lid));
       return batch.commit();
     },
@@ -116,6 +120,25 @@ async function createFirebaseStore() {
       return fb.updateDoc(fb.doc(itemsCol(fid), iid), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
     },
 
+    // 相片：先喺本機攞 ID，唔使等上載完（離線都得）
+    addPhoto(fid, data) {
+      const ref = fb.doc(photosCol(fid));
+      const done = fb.setDoc(ref, { data, createdAt: fb.serverTimestamp() });
+      return { id: ref.id, done };
+    },
+
+    async getPhoto(fid, pid) {
+      const snap = await fb.getDoc(fb.doc(photosCol(fid), pid));
+      return snap.exists() ? snap.data().data : null;
+    },
+
+    deletePhotos(fid, ids) {
+      if (!ids?.length) return Promise.resolve();
+      const batch = fb.writeBatch(db);
+      for (const pid of ids) batch.delete(fb.doc(photosCol(fid), pid));
+      return batch.commit();
+    },
+
     subscribeDict(fid, cb) {
       return fb.onSnapshot(dictCol(fid), (snap) => cb(snap.docs.map((d) => d.data())), () => cb([]));
     },
@@ -128,7 +151,10 @@ async function createFirebaseStore() {
       const q = fb.query(itemsCol(fid), fb.where('listId', '==', lid), fb.where('done', '==', true));
       const snap = await fb.getDocs(q);
       const batch = fb.writeBatch(db);
-      snap.forEach((d) => batch.delete(d.ref));
+      snap.forEach((d) => {
+        batch.delete(d.ref);
+        for (const pid of d.data().photos || []) batch.delete(fb.doc(photosCol(fid), pid));
+      });
       return batch.commit();
     },
   };
@@ -160,6 +186,10 @@ function createLocalStore() {
     }
   });
   const fam = (fid) => data.families[fid];
+  const removeItem = (f, id) => {
+    for (const pid of f.items[id]?.photos || []) delete f.photos?.[pid];
+    delete f.items[id];
+  };
   const watch = (fn) => {
     listeners.add(fn);
     queueMicrotask(fn);
@@ -195,22 +225,22 @@ function createLocalStore() {
       return watch(() => cb(Object.entries(fam(fid)?.lists || {}).map(([id, l]) => ({ id, ...l }))));
     },
 
-    async addList(fid, name) {
+    async addList(fid, name, kind = 'shop') {
       const lid = randomId();
-      fam(fid).lists[lid] = { name, createdAt: Date.now() };
+      fam(fid).lists[lid] = { name, kind, createdAt: Date.now() };
       save();
       return lid;
     },
 
-    async renameList(fid, lid, name) {
-      fam(fid).lists[lid].name = name;
+    async updateList(fid, lid, patch) {
+      Object.assign(fam(fid).lists[lid], patch);
       save();
     },
 
     async deleteList(fid, lid) {
       const f = fam(fid);
       delete f.lists[lid];
-      for (const [id, it] of Object.entries(f.items)) if (it.listId === lid) delete f.items[id];
+      for (const [id, it] of Object.entries(f.items)) if (it.listId === lid) removeItem(f, id);
       save();
     },
 
@@ -243,6 +273,24 @@ function createLocalStore() {
       save();
     },
 
+    addPhoto(fid, data) {
+      const id = randomId();
+      const f = fam(fid);
+      f.photos = { ...f.photos, [id]: data };
+      save();
+      return { id, done: Promise.resolve() };
+    },
+
+    async getPhoto(fid, pid) {
+      return fam(fid)?.photos?.[pid] || null;
+    },
+
+    async deletePhotos(fid, ids) {
+      const f = fam(fid);
+      for (const pid of ids || []) delete f.photos?.[pid];
+      save();
+    },
+
     subscribeDict(fid, cb) {
       return watch(() => cb(Object.values(fam(fid)?.dict || {})));
     },
@@ -255,7 +303,7 @@ function createLocalStore() {
 
     async clearDone(fid, lid) {
       const f = fam(fid);
-      for (const [id, it] of Object.entries(f.items)) if (it.listId === lid && it.done) delete f.items[id];
+      for (const [id, it] of Object.entries(f.items)) if (it.listId === lid && it.done) removeItem(f, id);
       save();
     },
   };

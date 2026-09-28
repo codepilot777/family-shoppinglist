@@ -197,12 +197,21 @@ export const DICTIONARY = [
   ['消毒酒精|酒精', 'rubbing alcohol', 'alkohol', 'home'],
   ['蚊怕水|驅蚊', 'mosquito repellent', 'obat nyamuk', 'home'],
 
+  // app 自動改嘅名
+  ['📷 相片', '📷 Photo', '📷 Foto', 'other'],
+
   // 清單名（地方）
   ['超市|超級市場', 'Supermarket', 'Supermarket', 'other'],
   ['街市', 'Wet market', 'Pasar', 'other'],
   ['藥房', 'Pharmacy', 'Apotek', 'other'],
   ['麵包舖', 'Bakery', 'Toko roti', 'other'],
   ['日本超市', 'Japanese supermarket', 'Supermarket Jepang', 'other'],
+  ['日本', 'Japan', 'Jepang', 'other'],
+  ['韓國', 'Korea', 'Korea', 'other'],
+  ['台灣', 'Taiwan', 'Taiwan', 'other'],
+  ['深圳', 'Shenzhen', 'Shenzhen', 'other'],
+  ['網購', 'Online shopping', 'Belanja online', 'other'],
+  ['想買', 'Wish list', 'Daftar keinginan', 'other'],
 ];
 
 // 快速查詢：任何語言、任何同義詞（細楷）→ { zh, en, id, cat }

@@ -239,3 +239,30 @@ dialog h2 { margin: 0 0 1rem; font-size: 1.1875rem; }
 .addbar .mic.listening { background: var(--accent-soft); border-color: var(--accent); animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { transform: scale(1.08); } }
 @media (prefers-reduced-motion: reduce) { .addbar .mic.listening { animation: none; } }
+
+/* ---------- 相片 / 想買清單 ---------- */
+.addbar .icon-square { padding: 0; width: 2.875rem; flex: none; font-size: 1.25rem; }
+.thumb-btn {
+  position: relative; flex: none; padding: 0; border: 0; background: none;
+  width: 2.75rem; height: 2.75rem; border-radius: 0.5rem; overflow: hidden; margin-left: 0.25rem;
+}
+.items.wish .thumb-btn { width: 4rem; height: 4rem; }
+.thumb { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; background: var(--surface-2); }
+.thumb-count {
+  position: absolute; right: 2px; bottom: 2px; font-size: 0.6875rem; font-weight: 700;
+  background: rgb(0 0 0 / 0.6); color: #fff; border-radius: 99px; padding: 0 0.3125rem;
+}
+.item.done .thumb { opacity: 0.5; }
+.link-out { text-decoration: none; flex: none; }
+.item .price { font-weight: 600; color: var(--text); }
+.more-details {
+  border: 1px solid var(--line); border-radius: 0.75rem; padding: 0.5rem 0.75rem; margin-bottom: 0.875rem;
+}
+.more-details summary { cursor: pointer; font-size: 0.875rem; color: var(--muted); padding: 0.25rem 0; }
+.more-details[open] summary { margin-bottom: 0.625rem; }
+.photo-row { display: flex; align-items: center; gap: 0.625rem; }
+.photo-row .thumb-btn { margin: 0; width: 3.5rem; height: 3.5rem; }
+.photo-list { display: grid; gap: 0.875rem; }
+.photo { margin: 0; display: grid; gap: 0.5rem; }
+.photo img { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 0.75rem; background: var(--surface-2); min-height: 6rem; }
+.small-btn { min-height: 2.25rem; font-size: 0.875rem; justify-self: start; }

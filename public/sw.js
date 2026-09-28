@@ -1,5 +1,5 @@
 // 離線用：先用快取開 app，背景再攞新版本。Firestore 請求唔經呢度。
-const CACHE = 'fsl-v2';
+const CACHE = 'fsl-v3';
 const SHELL = [
   './',
   'index.html',
@@ -9,6 +9,7 @@ const SHELL = [
   'i18n.js',
   'translate.js',
   'dictionary.js',
+  'image.js',
   'firebase-config.js',
   'vendor/firebase.js',
   'manifest.webmanifest',

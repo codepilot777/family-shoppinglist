@@ -29,7 +29,8 @@ service cloud.firestore {
       allow read, delete: if signedIn();
       allow create, update: if signedIn()
         && familyExists(familyId)
-        && request.resource.data.keys().hasOnly(['name', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['name', 'kind', 'createdAt'])
+        && request.resource.data.get('kind', 'shop') in ['shop', 'wish']
         && shortString(request.resource.data.name, 30)
         && request.resource.data.name.size() > 0;
     }
@@ -39,7 +40,8 @@ service cloud.firestore {
       allow create, update: if signedIn()
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(
-             ['listId', 'name', 'lang', 'tr', 'trAuto', 'qty', 'note', 'category', 'addedBy', 'done', 'doneBy', 'doneAt', 'createdAt'])
+             ['listId', 'name', 'lang', 'tr', 'trAuto', 'qty', 'note', 'category', 'addedBy', 'done', 'doneBy', 'doneAt', 'createdAt',
+              'forWho', 'price', 'link', 'photos', 'thumb'])
         && shortString(request.resource.data.listId, 40)
         && shortString(request.resource.data.name, 60)
         && request.resource.data.name.size() > 0
@@ -50,7 +52,24 @@ service cloud.firestore {
         && request.resource.data.done is bool
         && request.resource.data.get('tr', {}) is map
         && request.resource.data.get('tr', {}).size() <= 3
-        && request.resource.data.get('trAuto', {}) is map;
+        && request.resource.data.get('trAuto', {}) is map
+        && shortString(request.resource.data.get('forWho', ''), 20)
+        && shortString(request.resource.data.get('price', ''), 20)
+        && shortString(request.resource.data.get('link', ''), 500)
+        && request.resource.data.get('photos', []) is list
+        && request.resource.data.get('photos', []).size() <= 3
+        && shortString(request.resource.data.get('thumb', ''), 30000);
+    }
+
+    // 相片：壓縮後嘅 JPEG（data URL），唔使 Firebase Storage
+    match /families/{familyId}/photos/{photoId} {
+      allow get, delete: if signedIn();
+      allow create: if signedIn()
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['data', 'createdAt'])
+        && request.resource.data.data is string
+        && request.resource.data.data.size() <= 400000
+        && request.resource.data.data.matches('^data:image/jpeg;base64,.*');
     }
 
     // 家庭字典：屋企人改過嘅翻譯，下次自動用
