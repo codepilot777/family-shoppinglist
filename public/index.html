@@ -22,6 +22,16 @@
   <dialog id="dialog"></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
 
+  <script>
+    // 萬一 app 載入失敗，唔好淨係見到「…」
+    window.addEventListener('error', function (e) {
+      var app = document.getElementById('app');
+      if (!app || !app.classList.contains('loading') || app.querySelector('.card')) return;
+      app.innerHTML = '<div class="card" style="max-width:420px"><h2>載入失敗 / Failed to load</h2><p class="small muted"></p>' +
+        '<button class="btn primary block" onclick="location.reload()">再試 / Retry</button></div>';
+      app.querySelector('p').textContent = (e.message || 'Error') + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '');
+    });
+  </script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
