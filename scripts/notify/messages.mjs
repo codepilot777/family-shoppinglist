@@ -2,6 +2,8 @@
 import { weekday, nextWeekStart, weekDates, formatDay } from '../../public/dates.js';
 import { attendance, summarize } from '../../public/dinner.js';
 import { marketWindow, collectIngredients } from '../../public/menu.js';
+import { dueToday } from '../../public/chores.js';
+import { DICT_INDEX } from '../../public/dictionary.js';
 
 const LOCALES = { zh: 'zh-Hant-HK', en: 'en', id: 'id' };
 
@@ -22,6 +24,8 @@ const TEXT = {
     market: '\n🧺 今日買餸：{n} 樣材料，打開 app 睇',
     walletTitle: '💰 買餸錢包得返 {amount}',
     walletBody: '低過 {limit}，記得入錢。',
+    choresTitle: '🧹 今日家務（{n} 樣）',
+    late: '（遲咗）',
     sep: '、',
   },
   en: {
@@ -40,6 +44,8 @@ const TEXT = {
     market: '\n🧺 Shopping day: {n} ingredient(s) — open the app',
     walletTitle: '💰 Grocery wallet has {amount} left',
     walletBody: 'Below {limit} — remember to top up.',
+    choresTitle: '🧹 Chores today ({n})',
+    late: ' (late)',
     sep: ', ',
   },
   id: {
@@ -58,6 +64,8 @@ const TEXT = {
     market: '\n🧺 Hari belanja: {n} bahan — buka aplikasi',
     walletTitle: '💰 Uang belanja tinggal {amount}',
     walletBody: 'Di bawah {limit} — jangan lupa diisi.',
+    choresTitle: '🧹 Tugas hari ini ({n})',
+    late: ' (terlambat)',
     sep: ', ',
   },
 };
@@ -81,9 +89,10 @@ function summaryBody(tx, sum) {
  * @param marketDays 買餸日 [0..6]（冇設定就唔提）
  * @param recipes 菜式庫（計今日買餸要幾多樣材料）
  * @param wallet { balance, low }（仙；冇紀錄就 null）
+ * @param chores 家務 [{ name, tr, due, who }]（朝早通知負責人今日要做嘅）
  * @returns [{ key, token, data: { title, body, url, tag, actions } }]
  */
-export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [], wallet = null }) {
+export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [], wallet = null, chores = [] }) {
   const out = [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const tonight = summarize(members, today, dinners[today], weekday(today));
@@ -92,6 +101,7 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
   // 買餸日：由今日計到下個買餸日前，要買幾多樣（唔計常備）
   const win = marketDays.length ? marketWindow(today, marketDays) : null;
   const toBuy = win?.isMarketDay ? collectIngredients(win.dates, dinners, recipes).filter((x) => !x.staple).length : 0;
+  const choresDue = mode === 'daily' ? dueToday(chores, today) : [];
 
   for (const dev of devices) {
     const m = byId.get(dev.memberId);
@@ -101,6 +111,23 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
     const url = (q) => `${appUrl}?${q}`;
     const push = (data) =>
       out.push({ key: dev.key, token: dev.token, data: { tag: `dinner-${mode}`, actions: '[]', ...data } });
+
+    // 🧹 今日（連過咗期）輪到佢嘅家務；揀「任何人」嘅唔發
+    const mine = choresDue.filter((c) => c.who === m.id);
+    if (mine.length) {
+      const name = (c) => c.tr?.[lang] || DICT_INDEX.get(String(c.name).trim().toLowerCase())?.[lang] || c.name;
+      out.push({
+        key: dev.key,
+        token: dev.token,
+        data: {
+          tag: 'chores',
+          actions: '[]',
+          title: fill(tx.choresTitle, { n: mine.length }),
+          body: mine.map((c) => name(c) + (c.due < today ? tx.late : '')).join(tx.sep),
+          url: url('view=chores'),
+        },
+      });
+    }
 
     const eats = m.eats !== false;
     if (mode === 'weekly') {

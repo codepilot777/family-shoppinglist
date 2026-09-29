@@ -34,12 +34,13 @@ for (const famRef of await db.collection('families').listDocuments()) {
   ]);
   if (pushSnap.empty || membersSnap.empty) continue;
 
-  const [famSnap, devicesSnap, recipesSnap, walletSnap] = await Promise.all([
+  const [famSnap, devicesSnap, recipesSnap, walletSnap, choresSnap] = await Promise.all([
     famRef.get(),
     famRef.collection('devices').get(),
     // 買餸日同錢包提示用（淨係朝早要）
     MODE === 'daily' ? famRef.collection('recipes').get() : null,
     MODE === 'daily' ? famRef.collection('wallet').get() : null,
+    MODE === 'daily' ? famRef.collection('chores').get() : null,
   ]);
 
   const members = membersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -60,7 +61,8 @@ for (const famRef of await db.collection('families').listDocuments()) {
   const wallet = walletEntries.length
     ? { balance: balance(walletEntries), low: Number.isInteger(walletLow) ? walletLow : DEFAULT_LOW }
     : null;
-  const messages = buildMessages({ mode: MODE, today, members, dinners, devices, appUrl: APP_URL, marketDays, recipes, wallet });
+  const chores = choresSnap ? choresSnap.docs.map((d) => d.data()) : [];
+  const messages = buildMessages({ mode: MODE, today, members, dinners, devices, appUrl: APP_URL, marketDays, recipes, wallet, chores });
   console.log(`family …${famRef.id.slice(-4)}: ${members.length} members, ${devices.length} devices, ${messages.length} messages`);
 
   for (const msg of messages) {

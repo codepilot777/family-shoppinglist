@@ -219,6 +219,19 @@ export const DICTIONARY = [
   ['深圳', 'Shenzhen', 'Shenzhen', 'other'],
   ['網購', 'Online shopping', 'Belanja online', 'other'],
   ['想買', 'Wish list', 'Daftar keinginan', 'other'],
+  // 家務
+  ['換床單', 'Change bed sheets', 'Ganti seprai', 'other'],
+  ['換毛巾', 'Change towels', 'Ganti handuk', 'other'],
+  ['洗廁所', 'Clean the toilet', 'Bersihkan toilet', 'other'],
+  ['洗地|拖地', 'Mop the floor', 'Pel lantai', 'other'],
+  ['淋花', 'Water the plants', 'Siram tanaman', 'other'],
+  ['抹窗', 'Clean the windows', 'Lap jendela', 'other'],
+  ['抹風扇', 'Clean the fans', 'Lap kipas angin', 'other'],
+  ['清雪櫃', 'Clean the fridge', 'Bersihkan kulkas', 'other'],
+  ['洗冷氣隔塵網', 'Clean the air-con filters', 'Cuci filter AC', 'other'],
+  ['洗抽油煙機', 'Clean the range hood', 'Bersihkan cerobong asap dapur', 'other'],
+  ['洗窗簾', 'Wash the curtains', 'Cuci gorden', 'other'],
+  ['倒回收', 'Take out the recycling', 'Buang sampah daur ulang', 'other'],
 ];
 
 // 快速查詢：任何語言、任何同義詞（細楷）→ { zh, en, id, cat }

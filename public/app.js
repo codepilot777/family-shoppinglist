@@ -3,6 +3,7 @@ import { canInstall, openInstall, onInstallChange, isIOS } from './install.js';
 import { openDevices, deviceLabel, familyCode, parseFamilyCode } from './devices-view.js';
 import { watchForUpdates } from './update.js';
 import { initWallet, walletOnEnterFamily, renderWallet, openExpense, snapReceipts } from './wallet-view.js';
+import { initChores, choresOnEnterFamily, renderChores } from './chores-view.js';
 import { topFrequent, freqKey } from './freq.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
@@ -97,10 +98,11 @@ async function boot() {
   const params = new URLSearchParams(location.search);
   const invite = clean(params.get('f'), 40).toLowerCase();
   const inviteKey = clean(params.get('k'), 40).toLowerCase();
-  if (['dinner', 'wallet'].includes(params.get('view'))) ls.set('fsl-view', params.get('view'));
+  if (VIEWS.includes(params.get('view'))) ls.set('fsl-view', params.get('view'));
   if (location.search) window.history.replaceState(null, '', location.pathname);
   initDinner({ state });
   initWallet({ state });
+  initChores({ state });
 
   try {
     state.store = await createStore();
@@ -386,6 +388,7 @@ function enterFamily(fid) {
     }),
     ...dinnerOnEnterFamily(fid),
     ...walletOnEnterFamily(fid),
+    ...choresOnEnterFamily(fid),
     s.subscribeFreq(
       fid,
       (docs) => {
@@ -397,18 +400,22 @@ function enterFamily(fid) {
   ];
 }
 
+const VIEWS = ['shop', 'dinner', 'chores', 'wallet'];
+
 function showView(view) {
-  if (!['shop', 'dinner', 'wallet'].includes(view)) view = 'shop';
+  if (!VIEWS.includes(view)) view = 'shop';
   ls.set('fsl-view', view);
   document.querySelectorAll('.views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
   $('#shop-view')?.classList.toggle('hidden', view !== 'shop');
   $('.addbar')?.classList.toggle('hidden', view !== 'shop');
   $('#dinner')?.classList.toggle('hidden', view !== 'dinner');
   $('#wallet')?.classList.toggle('hidden', view !== 'wallet');
+  $('#chores')?.classList.toggle('hidden', view !== 'chores');
   // 冇底部輸入欄嘅頁唔使留位
   document.body.classList.toggle('dinner-mode', view !== 'shop');
   if (view === 'dinner') renderDinner();
   else if (view === 'wallet') renderWallet();
+  else if (view === 'chores') renderChores();
   else render();
 }
 
@@ -439,9 +446,17 @@ function renderShell() {
       <button class="icon-btn" id="settings-btn" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">⚙️</button>
     </header>
     <nav class="views">
-      <button data-view="shop">${esc(t('viewShop'))}</button>
-      <button data-view="dinner">${esc(t('viewDinner'))}</button>
-      <button data-view="wallet">${esc(t('viewWallet'))}</button>
+      ${[
+        ['shop', 'viewShop'],
+        ['dinner', 'viewDinner'],
+        ['chores', 'viewChores'],
+        ['wallet', 'viewWallet'],
+      ]
+        .map(([v, key]) => {
+          const [icon, ...label] = t(key).split(' ');
+          return `<button data-view="${v}"><span class="v-icon" aria-hidden="true">${esc(icon)}</span><span>${esc(label.join(' '))}</span></button>`;
+        })
+        .join('')}
     </nav>
     <div id="shop-view">
     <nav class="tabs" id="tabs" role="tablist" aria-label="${esc(t('lists'))}"></nav>
@@ -453,6 +468,7 @@ function renderShell() {
     </div>
     <main id="dinner" class="hidden"></main>
     <main id="wallet" class="hidden"></main>
+    <main id="chores" class="hidden"></main>
     <div class="addbar">
       <form id="add-form" autocomplete="off">
         ${SpeechRecognition ? `<button type="button" class="btn mic" id="mic" aria-label="${esc(t('voice'))}" title="${esc(t('voice'))}">🎤</button>` : ''}
