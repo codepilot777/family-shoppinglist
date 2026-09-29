@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 
 const env = await initializeTestEnvironment({
   projectId: 'demo-fsl',
@@ -16,7 +16,11 @@ const test = async (name, fn) => {
   console.log('ok -', name);
 };
 
-const db = (uid) => (uid ? env.authenticatedContext(uid).firestore() : env.unauthenticatedContext().firestore());
+const dbs = new Map();
+const db = (uid) => {
+  if (!dbs.has(uid)) dbs.set(uid, uid ? env.authenticatedContext(uid).firestore() : env.unauthenticatedContext().firestore());
+  return dbs.get(uid);
+};
 const FID = 'fam0123456789abcdefg';
 const CODE = 'code12345678';
 const dev = (uid, code, fid = FID) => setDoc(doc(db(uid), `families/${fid}/devices/${uid}`), { code, name: uid, label: 'test', lastSeen: serverTimestamp() }, { merge: true });
@@ -227,6 +231,89 @@ await test('rosters: valid roster saved; bad settings, extra fields and removed 
   await assertFails(setDoc(ref('bob'), ok));
   await assertFails(getDoc(ref('bob')));
   await assertSucceeds(deleteDoc(ref('carol')));
+});
+
+// ---------- 👑 管理員 / 屋企人 ----------
+const AFID = 'adminfam0123456789ab';
+const ACODE = 'admincode1234';
+const fam = (uid, id = AFID) => doc(db(uid), `families/${id}`);
+const devRef = (uid, target = uid, id = AFID) => doc(db(uid), `families/${id}/devices/${target}`);
+const col = (uid, name, id = AFID) => collection(db(uid), `families/${id}/${name}`);
+
+await test('new family: creator becomes admin in one batch; nobody else can create themselves as admin', async () => {
+  const b = writeBatch(db('amy'));
+  b.set(fam('amy'), { name: '管理屋企', joinCode: ACODE, hasAdmin: true, createdAt: serverTimestamp() });
+  b.set(devRef('amy'), { code: ACODE, name: 'Amy', label: '', role: 'admin', lastSeen: serverTimestamp() });
+  await assertSucceeds(b.commit());
+  await assertFails(setDoc(devRef('bea'), { code: ACODE, name: 'Bea', label: '', role: 'admin' }));
+  await assertFails(setDoc(devRef('bea'), { code: ACODE, name: 'Bea', label: '', tabs: ['shop', 'wallet'] }));
+  await assertSucceeds(setDoc(devRef('bea'), { code: ACODE, name: 'Bea', label: '' }));
+});
+
+await test('member gets shop + dinner by default; other tabs are unreadable and unwritable', async () => {
+  await assertSucceeds(addDoc(col('amy', 'items'), item));
+  await assertSucceeds(addDoc(col('amy', 'wallet'), { type: 'topup', amount: 100, date: '2026-10-01', by: 'Amy' }));
+  await assertSucceeds(addDoc(col('amy', 'chores'), { name: '換床單', every: 1, unit: 'week', start: '2026-10-05', due: '2026-10-05' }));
+  await assertSucceeds(getDocs(col('bea', 'items')));
+  await assertSucceeds(getDocs(col('bea', 'dinners')));
+  await assertSucceeds(getDocs(col('bea', 'members')));
+  await assertSucceeds(getDocs(col('bea', 'events')));
+  await assertSucceeds(getDoc(fam('bea')));
+  await assertFails(getDocs(col('bea', 'wallet')));
+  await assertFails(getDocs(col('bea', 'inbox')));
+  await assertFails(getDocs(col('bea', 'chores')));
+  await assertFails(addDoc(col('bea', 'wallet'), { type: 'expense', amount: 100, date: '2026-10-01' }));
+});
+
+await test('member cannot change own access, family name, invite code or other devices', async () => {
+  await assertFails(updateDoc(devRef('bea'), { tabs: ['shop', 'dinner', 'wallet'] }));
+  await assertFails(updateDoc(devRef('bea'), { role: 'admin' }));
+  await assertSucceeds(updateDoc(devRef('bea'), { name: 'Bea2', lastSeen: serverTimestamp() }));
+  await assertFails(updateDoc(fam('bea'), { name: '改名' }));
+  await assertFails(updateDoc(fam('bea'), { joinCode: 'newcodeabcdef' }));
+  await assertFails(updateDoc(fam('bea'), { hasAdmin: false }));
+  await assertSucceeds(updateDoc(fam('bea'), { marketDays: [2, 5] })); // 有食飯
+  await assertFails(updateDoc(fam('bea'), { walletLow: 10000 })); // 冇家用
+  await assertFails(updateDoc(devRef('bea', 'amy'), { role: 'member' }));
+  await assertFails(deleteDoc(devRef('bea', 'amy')));
+});
+
+await test('admin grants tabs → member can use them; admin can promote, rename, rotate and remove', async () => {
+  await assertSucceeds(updateDoc(devRef('amy', 'bea'), { tabs: ['dinner', 'wallet'] }));
+  await assertSucceeds(getDocs(col('bea', 'wallet')));
+  await assertFails(getDocs(col('bea', 'items'))); // 購物拎走咗
+  await assertSucceeds(updateDoc(fam('bea'), { walletLow: 10000 }));
+  await assertFails(updateDoc(devRef('amy', 'bea'), { tabs: ['shop', 'bills'] })); // 未有嘅分頁
+  await assertFails(updateDoc(devRef('amy', 'bea'), { name: 'hacked' })); // 管理員只改權限
+  await assertSucceeds(updateDoc(fam('amy'), { name: '新名', joinCode: 'rotated12345' }));
+  await assertSucceeds(updateDoc(devRef('amy', 'bea'), { role: 'admin' }));
+  await assertSucceeds(getDocs(col('bea', 'chores')));
+  await assertSucceeds(updateDoc(devRef('bea', 'amy'), { tabs: ['shop'] })); // 另一個管理員都改得
+  await assertSucceeds(setDoc(devRef('cat'), { code: 'rotated12345', name: 'Cat', label: '' }));
+  await assertSucceeds(deleteDoc(devRef('bea', 'cat')));
+  await assertFails(getDocs(col('cat', 'items')));
+});
+
+await test('existing family without admin: everyone keeps full access until someone claims admin once', async () => {
+  const OFID = 'oldfamily0123456789a';
+  await env.withSecurityRulesDisabled(async (c) => {
+    await setDoc(doc(c.firestore(), `families/${OFID}`), { name: '舊', joinCode: 'oldcode12345' });
+    for (const u of ['dan', 'eve']) await setDoc(doc(c.firestore(), `families/${OFID}/devices/${u}`), { code: 'oldcode12345', name: u, label: '' });
+  });
+  await assertSucceeds(getDocs(col('eve', 'wallet', OFID)));
+  await assertSucceeds(getDocs(col('eve', 'chores', OFID)));
+  await assertFails(updateDoc(devRef('eve', 'eve', OFID), { role: 'admin' })); // 要同家庭一齊標記
+  const claim = (uid) => {
+    const b = writeBatch(db(uid));
+    b.update(fam(uid, OFID), { hasAdmin: true });
+    b.update(devRef(uid, uid, OFID), { role: 'admin' });
+    return b.commit();
+  };
+  await assertSucceeds(claim('dan'));
+  await assertFails(claim('eve')); // 已經有管理員
+  await assertSucceeds(getDocs(col('eve', 'items', OFID))); // 預設購物 + 食飯
+  await assertFails(getDocs(col('eve', 'wallet', OFID)));
+  await assertSucceeds(getDocs(col('dan', 'wallet', OFID)));
 });
 
 await env.cleanup();

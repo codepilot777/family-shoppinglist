@@ -1,6 +1,6 @@
 // ✈️ roster（.ics）自動當唔返食飯；🌴 姐姐放假（.xlsx）日曆紅點；每部機揀分頁
 import assert from 'node:assert/strict';
-import { createFamily, join, becomeMember, openCalendar, calendarDay, importRosterFile, hk, text, texts, until } from './lib.mjs';
+import { createFamily, join, becomeMember, grant, openCalendar, calendarDay, importRosterFile, hk, text, texts, until } from './lib.mjs';
 import { makeIcs, makeRosterXlsx, tmpFile } from './fixtures.mjs';
 
 export default async function ({ device }) {
@@ -54,9 +54,10 @@ export default async function ({ device }) {
   assert.ok((await calendarDay(pilot, d1)).some((r) => r.includes('LAX')), 'flight roster kept');
   await pilot.click('[data-close-sheet]');
 
-  // 🗂 每部機揀分頁：淨係食飯 → 冇分頁列，日曆冇家務
-  const uncle = await device('uncle', { storage: { 'fsl-tabs': JSON.stringify(['dinner']) } });
+  // 👑 管理員只畀叔叔「食飯」→ 冇分頁列，一開就係食飯頁
+  const uncle = await device('uncle');
   await join(uncle, link, '叔叔');
-  assert.equal(await uncle.isVisible('.views'), false, 'tab bar hidden with one tab');
+  await grant(pilot, '叔叔', ['dinner']);
+  await until(async () => !(await uncle.isVisible('.views')), { message: 'tab bar hidden with one tab' });
   assert.equal(await uncle.isVisible('#dinner'), true);
 }

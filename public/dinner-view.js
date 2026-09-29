@@ -21,7 +21,7 @@ export function initDinner(context) {
   initMenu({ ctx, dinners: () => d.dinners, headcount: (date) => daySummary(date).total, rerender: () => renderDinner() });
   document.addEventListener('visibilitychange', () => {
     // 過咗半夜：重新訂閱新嘅日期範圍
-    if (document.visibilityState === 'visible' && ctx.state.familyId && hkToday() !== d.today) subscribeDinners(ctx.state.familyId);
+    if (document.visibilityState === 'visible' && ctx.state.familyId && d.unsubDinners && hkToday() !== d.today) subscribeDinners(ctx.state.familyId);
   });
 }
 
@@ -59,12 +59,15 @@ function subscribeDinners(familyId) {
   );
 }
 
-export function dinnerOnEnterFamily(familyId) {
+// opts.dinner = false：冇「食飯」權限（淨係讀成員同 roster，日曆同家務要用）
+export function dinnerOnEnterFamily(familyId, { dinner = true } = {}) {
   d.members = [];
   d.rawMembers = [];
   d.rosters = {};
   d.dinners = {};
-  subscribeDinners(familyId);
+  d.unsubDinners?.();
+  d.unsubDinners = null;
+  if (dinner) subscribeDinners(familyId);
   const unsubRosters = store().subscribeRosters(
     familyId,
     (docs) => {
@@ -86,7 +89,7 @@ export function dinnerOnEnterFamily(familyId) {
     },
     fail,
   );
-  return [unsubMembers, unsubRosters, subscribeRecipes(familyId), () => d.unsubDinners?.()];
+  return [unsubMembers, unsubRosters, ...(dinner ? [subscribeRecipes(familyId)] : []), () => d.unsubDinners?.()];
 }
 
 // 🌴 邊個放假（例如姐姐）：只係俾大家知，其他照舊

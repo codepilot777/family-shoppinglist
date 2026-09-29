@@ -1,6 +1,6 @@
 // 🧹 家務：建議一撳就加（自動揀負責煮飯嘅人）、做咗 / 復原、我嘅、兩部機同步
 import assert from 'node:assert/strict';
-import { createFamily, join, becomeMember, texts, until } from './lib.mjs';
+import { createFamily, join, becomeMember, grant, texts, until } from './lib.mjs';
 
 export default async function ({ device }) {
   const mum = await device('mum');
@@ -9,6 +9,8 @@ export default async function ({ device }) {
   const siti = await device('siti', { locale: 'id-ID' });
   await join(siti, link, 'Siti');
   await becomeMember(siti, { cook: true });
+  await grant(mum, 'Siti', ['shop', 'dinner', 'chores']);
+  await until(async () => (await siti.locator('.views [data-view="chores"]').count()) === 1, { message: 'siti gets chores tab' });
 
   await siti.click('.views [data-view="chores"]');
   await siti.waitForSelector('#chores [data-preset="換床單"]');

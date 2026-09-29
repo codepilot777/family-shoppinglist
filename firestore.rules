@@ -4,6 +4,11 @@ rules_version = '2';
 // 移除某部機 = 刪咗佢嘅 devices 記錄；換新邀請代碼之後，舊連結登記唔到。
 // 舊式家庭（未有 joinCode）暫時照舊：知道家庭 ID 就用到，直至第一次換代碼。
 // 冇人可以列出全部家庭。
+//
+// 👑 權限（兩級）：管理員睇晒所有嘢，可以揀每部機（屋企人）用得邊啲分頁（tabs）。
+// 未有管理員嘅家庭（舊家庭升級前）照舊：已登記嘅機全部都用得，直至有人撳「我係管理員」。
+// 分頁：shop 購物、dinner 食飯（連菜式）、chores 家務、wallet 家用（連未入數嘅單）。
+// 日曆事項、roster、成員名、字典、相、通知 token：所有已登記嘅機都用得。
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -32,8 +37,45 @@ service cloud.firestore {
     function canUse(familyId) {
       return isDevice(familyId) || (signedIn() && isLegacy(familyId));
     }
+    function devicePath(familyId, uid) {
+      return /databases/$(database)/documents/families/$(familyId)/devices/$(uid);
+    }
+    function myDevice(familyId) {
+      return get(devicePath(familyId, request.auth.uid)).data;
+    }
+    function hasAdmin(familyId) {
+      return get(familyPath(familyId)).data.get('hasAdmin', false) == true;
+    }
+    function isAdmin(familyId) {
+      return isDevice(familyId) && myDevice(familyId).get('role', 'member') == 'admin';
+    }
+    // 用唔用得某個分頁：舊式家庭 / 未有管理員 → 用得；管理員 → 用得；屋企人 → 要喺 tabs 入面（冇設定 = 購物 + 食飯）
+    function can(familyId, tab) {
+      return (signedIn() && isLegacy(familyId))
+        || (isDevice(familyId)
+            && (!hasAdmin(familyId)
+                || myDevice(familyId).get('role', 'member') == 'admin'
+                || tab in myDevice(familyId).get('tabs', ['shop', 'dinner'])));
+    }
+    function validTabs(v) {
+      return v is list && v.size() <= 8 && v.hasOnly(['shop', 'dinner', 'chores', 'wallet']);
+    }
+    // 邊個可以改家庭設定：管理員乜都改得；未有管理員嗰陣照舊（仲可以「我係管理員」）；
+    // 有管理員之後，屋企人只可以改自己分頁嘅設定（買餸日要食飯、低餘額提醒要家用）
+    function familyEditOk(familyId) {
+      let keys = request.resource.data.diff(resource.data).affectedKeys();
+      let claiming = request.resource.data.get('hasAdmin', false) == true
+        && getAfter(devicePath(familyId, request.auth.uid)).data.get('role', 'member') == 'admin';
+      return isAdmin(familyId)
+        || (!hasAdmin(familyId) && (!keys.hasAny(['hasAdmin']) || claiming))
+        || (hasAdmin(familyId)
+            && keys.hasOnly(['marketDays', 'marketListId', 'walletLow'])
+            && (!keys.hasAny(['marketDays', 'marketListId']) || can(familyId, 'dinner'))
+            && (!keys.hasAny(['walletLow']) || can(familyId, 'wallet')));
+    }
     function validFamily() {
-      return request.resource.data.keys().hasOnly(['name', 'createdAt', 'marketDays', 'marketListId', 'joinCode', 'walletLow'])
+      return request.resource.data.keys().hasOnly(['name', 'createdAt', 'marketDays', 'marketListId', 'joinCode', 'walletLow', 'hasAdmin'])
+        && request.resource.data.get('hasAdmin', false) is bool
         && request.resource.data.get('walletLow', 0) is int
         && request.resource.data.get('walletLow', 0) >= 0
         && shortString(request.resource.data.name, 30)
@@ -49,34 +91,62 @@ service cloud.firestore {
       allow get: if canUse(familyId);
       allow create: if signedIn() && familyId.size() >= 16 && validFamily();
       // 已經有代碼嘅家庭，唔准刪走代碼（唔可以變返舊式）
+      // 有咗管理員就唔可以變返冇
       allow update: if canUse(familyId) && validFamily()
-        && (!('joinCode' in resource.data) || 'joinCode' in request.resource.data);
+        && (!('joinCode' in resource.data) || 'joinCode' in request.resource.data)
+        && (resource.data.get('hasAdmin', false) == false || request.resource.data.get('hasAdmin', false) == true)
+        && familyEditOk(familyId);
       // 唔准 list（避免有人列出所有家庭）同 delete
     }
 
-    // 已登記嘅機：doc ID = 部機嘅 uid
+    // 已登記嘅機：doc ID = 部機嘅 uid；role = 'admin' | 'member'，tabs = 屋企人用得嘅分頁
     match /families/{familyId}/devices/{deviceId} {
-      allow read, delete: if canUse(familyId);
+      allow read: if canUse(familyId);
+      // 移除：有管理員之後只有管理員（或者自己離開）
+      allow delete: if canUse(familyId) && (!hasAdmin(familyId) || isAdmin(familyId) || request.auth.uid == deviceId);
       allow create: if signedIn()
         && request.auth.uid == deviceId
-        && familyExists(familyId)
-        && request.resource.data.keys().hasOnly(['code', 'name', 'label', 'lastSeen'])
-        && request.resource.data.code == joinCodeOf(familyId)
+        && request.resource.data.keys().hasOnly(['code', 'name', 'label', 'lastSeen', 'role', 'tabs'])
         && shortString(request.resource.data.get('name', ''), 20)
-        && shortString(request.resource.data.get('label', ''), 60);
-      // 已登記嘅機只可以改自己（最後使用時間、名）；代碼要係原本嗰個或者而家有效嗰個
+        && shortString(request.resource.data.get('label', ''), 60)
+        && (
+          // 用邀請代碼加入：一定係屋企人，最多只有預設分頁
+          (familyExists(familyId)
+            && request.resource.data.code == joinCodeOf(familyId)
+            && request.resource.data.get('role', 'member') == 'member'
+            && request.resource.data.get('tabs', ['shop', 'dinner']).hasOnly(['shop', 'dinner']))
+          // 開新家庭嗰部機（同家庭喺同一個 batch 建立）：做管理員
+          || (!familyExists(familyId)
+            && getAfter(familyPath(familyId)).data.get('hasAdmin', false) == true
+            && request.resource.data.code == getAfter(familyPath(familyId)).data.joinCode
+            && request.resource.data.role == 'admin')
+        );
       allow update: if signedIn()
-        && request.auth.uid == deviceId
-        && request.resource.data.keys().hasOnly(['code', 'name', 'label', 'lastSeen'])
-        && (request.resource.data.get('code', '') == resource.data.get('code', '')
-            || request.resource.data.get('code', '') == joinCodeOf(familyId))
-        && shortString(request.resource.data.get('name', ''), 20)
-        && shortString(request.resource.data.get('label', ''), 60);
+        && request.resource.data.keys().hasOnly(['code', 'name', 'label', 'lastSeen', 'role', 'tabs'])
+        && request.resource.data.get('role', 'member') in ['admin', 'member']
+        && validTabs(request.resource.data.get('tabs', []))
+        && (
+          // 自己：更新名、最後使用時間、代碼（原本嗰個或者而家有效嗰個）；唔可以自己改權限
+          (request.auth.uid == deviceId
+            && (request.resource.data.get('code', '') == resource.data.get('code', '')
+                || request.resource.data.get('code', '') == joinCodeOf(familyId))
+            && shortString(request.resource.data.get('name', ''), 20)
+            && shortString(request.resource.data.get('label', ''), 60)
+            && (request.resource.data.get('tabs', null) == resource.data.get('tabs', null))
+            && (request.resource.data.get('role', 'member') == resource.data.get('role', 'member')
+                // 「我係管理員」：家庭未有管理員，同一個 batch 將家庭標記為有管理員
+                || (request.resource.data.role == 'admin'
+                    && !hasAdmin(familyId)
+                    && getAfter(familyPath(familyId)).data.get('hasAdmin', false) == true)))
+          // 管理員：改其他機嘅權限
+          || (isAdmin(familyId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'tabs']))
+        );
     }
 
     match /families/{familyId}/lists/{listId} {
-      allow read, delete: if canUse(familyId);
-      allow create, update: if canUse(familyId)
+      allow read, delete: if can(familyId, 'shop');
+      allow create, update: if can(familyId, 'shop')
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['name', 'kind', 'createdAt'])
         && request.resource.data.get('kind', 'shop') in ['shop', 'wish']
@@ -85,8 +155,8 @@ service cloud.firestore {
     }
 
     match /families/{familyId}/items/{itemId} {
-      allow read, delete: if canUse(familyId);
-      allow create, update: if canUse(familyId)
+      allow read, delete: if can(familyId, 'shop');
+      allow create, update: if can(familyId, 'shop')
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(
              ['listId', 'name', 'lang', 'tr', 'trAuto', 'qty', 'note', 'category', 'addedBy', 'done', 'doneBy', 'doneAt', 'createdAt',
@@ -123,8 +193,9 @@ service cloud.firestore {
 
     // 食飯：成員
     match /families/{familyId}/members/{memberId} {
-      allow read, delete: if canUse(familyId);
-      allow create, update: if canUse(familyId)
+      allow read: if canUse(familyId);
+      allow delete: if can(familyId, 'dinner');
+      allow create, update: if can(familyId, 'dinner')
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['name', 'proxy', 'eats', 'pattern', 'lastConfirmedWeek', 'createdAt'])
         && shortString(request.resource.data.name, 20)
@@ -139,8 +210,8 @@ service cloud.firestore {
     // 食飯：每日紀錄（doc ID = 'YYYY-MM-DD'）
     // att = { 成員ID: {home, guests, note, by, late, at} }，dishes = [菜式ID]
     match /families/{familyId}/dinners/{date} {
-      allow read: if canUse(familyId);
-      allow create, update: if canUse(familyId)
+      allow read: if can(familyId, 'dinner');
+      allow create, update: if can(familyId, 'dinner')
         && familyExists(familyId)
         && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && request.resource.data.keys().hasOnly(['att', 'dishes'])
@@ -152,8 +223,8 @@ service cloud.firestore {
 
     // 菜式庫：菜名 + 材料（名、建議份量、常備）
     match /families/{familyId}/recipes/{recipeId} {
-      allow read, delete: if canUse(familyId);
-      allow create, update: if canUse(familyId)
+      allow read, delete: if can(familyId, 'dinner');
+      allow create, update: if can(familyId, 'dinner')
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['name', 'lang', 'tr', 'trAuto', 'ingredients', 'createdAt'])
         && shortString(request.resource.data.name, 40)
@@ -167,8 +238,8 @@ service cloud.firestore {
 
     // 💰 買餸錢包：每筆入錢 / 支出 / 對數差額（銀碼用「仙」做整數）
     match /families/{familyId}/wallet/{entryId} {
-      allow read, delete: if canUse(familyId);
-      allow create, update: if canUse(familyId)
+      allow read, delete: if can(familyId, 'wallet');
+      allow create, update: if can(familyId, 'wallet')
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(
              ['type', 'amount', 'date', 'by', 'place', 'note', 'items', 'receipts', 'expected', 'counted', 'createdAt', 'editedBy'])
@@ -191,8 +262,8 @@ service cloud.firestore {
 
     // 🧾 未入數嘅單：一次過影晒，之後先逐張入數（大相喺 photos，呢度得細圖）
     match /families/{familyId}/inbox/{receiptId} {
-      allow read, delete: if canUse(familyId);
-      allow create: if canUse(familyId)
+      allow read, delete: if can(familyId, 'wallet');
+      allow create: if can(familyId, 'wallet')
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['photo', 'thumb', 'by', 'createdAt'])
         && shortString(request.resource.data.photo, 40)
@@ -203,8 +274,8 @@ service cloud.firestore {
 
     // 🧹 家務：每 N 日 / 星期 / 月，due = 下次到期日，who = 負責嘅食飯成員 ID（可以留空）
     match /families/{familyId}/chores/{choreId} {
-      allow read, delete: if canUse(familyId);
-      allow create, update: if canUse(familyId)
+      allow read, delete: if can(familyId, 'chores');
+      allow create, update: if can(familyId, 'chores')
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(
              ['name', 'lang', 'tr', 'trAuto', 'every', 'unit', 'start', 'due', 'who', 'note', 'lastDone', 'lastBy', 'by', 'createdAt'])
@@ -275,8 +346,8 @@ service cloud.firestore {
 
     // ⭐ 常買：全家加過幾多次（doc ID = 細楷名）
     match /families/{familyId}/freq/{key} {
-      allow read, delete: if canUse(familyId);
-      allow create, update: if canUse(familyId)
+      allow read, delete: if can(familyId, 'shop');
+      allow create, update: if can(familyId, 'shop')
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['name', 'category', 'lang', 'tr', 'count', 'lastAt'])
         && shortString(request.resource.data.name, 60)
