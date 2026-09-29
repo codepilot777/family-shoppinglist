@@ -116,6 +116,7 @@ export function openMenuDay(date) {
       <div class="row wrap">
         <button type="button" class="btn" id="menu-new">${esc(t('newRecipe'))}</button>
         ${recipes.length ? '' : `<button type="button" class="btn" id="menu-seed">${esc(t('seedRecipes', { n: SEED_RECIPES.length }))}</button>`}
+        ${mergeButton()}
       </div>
       <div class="actions"><span class="spacer"></span>
         <button type="button" class="btn" data-close>${esc(t('cancel'))}</button>
@@ -130,10 +131,8 @@ export function openMenuDay(date) {
         else selected.delete(e.target.value);
       };
       $('#menu-new', dlg).onclick = () => openRecipe(null, () => openMenuDay(date));
-      $('#menu-seed', dlg)?.addEventListener('click', async () => {
-        await seedRecipes();
-        setTimeout(() => draw(dlg), 150);
-      });
+      bindSeed($('#menu-seed', dlg), () => draw(dlg));
+      bindMerge(dlg, () => openMenuDay(date));
       $('#menu-form', dlg).onsubmit = (e) => {
         e.preventDefault();
         store().setDishes(fid(), date, [...selected].filter((id) => recipes.some((r) => r.id === id))).catch(fail);
@@ -146,15 +145,66 @@ export function openMenuDay(date) {
 
 // ---------- 📖 菜式庫 ----------
 
+// 內置菜式用固定 ID：重複撳、幾部機一齊撳都唔會加多份；已經有同名嘅就唔再加
+const seedId = (name) => `seed-${[...name].map((c) => c.codePointAt(0).toString(36)).join('')}`.slice(0, 60);
+const normName = (s) => String(s || '').trim().toLowerCase();
 async function seedRecipes() {
-  const list = SEED_RECIPES.map(([name, ings]) => ({
+  const have = new Set(recipes.map((r) => normName(r.name)));
+  const list = SEED_RECIPES.filter(([name]) => !have.has(normName(name))).map(([name, ings]) => ({
+    id: seedId(name),
     name,
     lang: 'zh',
     tr: prepareItem(name, 'zh').tr,
     trAuto: {},
     ingredients: ings.map(([n, amount = '']) => ({ name: n, amount, staple: isStapleName(n) })),
   }));
-  await store().addRecipes(fid(), list).catch(fail);
+  if (list.length) await store().addRecipes(fid(), list).catch(fail);
+}
+
+// 🧹 同名同材料嘅菜式當重複：每組留最早嗰個，未來幾日菜單改用返佢，其他刪走
+function duplicateGroups() {
+  const groups = new Map();
+  for (const r of recipes) {
+    const key = `${normName(r.name)}|${(r.ingredients || []).map((i) => normName(i.name)).sort().join(',')}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+const duplicateCount = () => duplicateGroups().reduce((n, g) => n + g.length - 1, 0);
+
+async function mergeDuplicates() {
+  const replace = new Map();
+  for (const g of duplicateGroups()) {
+    const [keep, ...rest] = [...g].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.id.localeCompare(b.id));
+    for (const r of rest) replace.set(r.id, keep.id);
+  }
+  if (!replace.size) return 0;
+  for (const [date, doc] of Object.entries(m.dinners())) {
+    const dishes = doc?.dishes || [];
+    if (!dishes.some((id) => replace.has(id))) continue;
+    store().setDishes(fid(), date, [...new Set(dishes.map((id) => replace.get(id) || id))]).catch(fail);
+  }
+  await Promise.all([...replace.keys()].map((id) => store().deleteRecipe(fid(), id).catch(fail)));
+  return replace.size;
+}
+
+const mergeButton = () =>
+  duplicateCount() ? `<button type="button" class="btn" data-merge-dups>🧹 ${esc(t('mergeDuplicates', { n: duplicateCount() }))}</button>` : '';
+function bindMerge(dlg, after) {
+  dlg.querySelector('[data-merge-dups]')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    const n = await mergeDuplicates();
+    toast(t('mergedDuplicates', { n }));
+    setTimeout(after, 200);
+  });
+}
+function bindSeed(btn, after) {
+  btn?.addEventListener('click', async () => {
+    btn.disabled = true;
+    await seedRecipes();
+    setTimeout(after, 150);
+  });
 }
 
 export function openRecipes() {
@@ -175,6 +225,7 @@ export function openRecipes() {
            <button type="button" class="btn block" id="recipes-seed">${esc(t('seedRecipes', { n: SEED_RECIPES.length }))}</button>`
     }
     <div class="actions">
+      ${mergeButton()}
       <button type="button" class="btn" id="recipes-new">${esc(t('newRecipe'))}</button>
       <span class="spacer"></span>
       <button type="button" class="btn primary" data-close>${esc(t('close'))}</button>
@@ -182,10 +233,8 @@ export function openRecipes() {
     (dlg) => {
       dlg.querySelectorAll('[data-rid]').forEach((b) => (b.onclick = () => openRecipe(recipes.find((r) => r.id === b.dataset.rid), openRecipes)));
       $('#recipes-new', dlg).onclick = () => openRecipe(null, openRecipes);
-      $('#recipes-seed', dlg)?.addEventListener('click', async () => {
-        await seedRecipes();
-        setTimeout(openRecipes, 150);
-      });
+      bindSeed($('#recipes-seed', dlg), openRecipes);
+      bindMerge(dlg, openRecipes);
     },
   );
 }

@@ -237,9 +237,10 @@ async function createFirebaseStore(firebaseConfig) {
       return ref.id;
     },
 
+    // 有 id 就用嗰個 ID（例如內置菜式：撳幾多次、幾多部機撳都唔會重複）
     async addRecipes(fid, recipes) {
       const batch = fb.writeBatch(db);
-      for (const r of recipes) batch.set(fb.doc(recipesCol(fid)), { ...r, createdAt: fb.serverTimestamp() });
+      for (const { id, ...r } of recipes) batch.set(id ? fb.doc(recipesCol(fid), id) : fb.doc(recipesCol(fid)), { ...r, createdAt: fb.serverTimestamp() });
       return batch.commit();
     },
 
@@ -653,7 +654,7 @@ function createLocalStore() {
     async addRecipes(fid, recipes) {
       const f = fam(fid);
       f.recipes = f.recipes || {};
-      recipes.forEach((r, i) => (f.recipes[randomId()] = { ...r, createdAt: Date.now() + i }));
+      recipes.forEach(({ id, ...r }, i) => (f.recipes[id || randomId()] = { ...r, createdAt: Date.now() + i }));
       save();
     },
 
