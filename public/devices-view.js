@@ -48,6 +48,7 @@ const TABS = [
   ['shop', 'viewShop'],
   ['dinner', 'viewDinner'],
   ['chores', 'viewChores'],
+  ['dues', 'viewDues'],
   ['wallet', 'viewWallet'],
 ];
 const DEFAULT_TABS = ['shop', 'dinner'];

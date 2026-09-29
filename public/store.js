@@ -76,6 +76,8 @@ async function createFirebaseStore(firebaseConfig) {
   const freqCol = (fid) => fb.collection(db, 'families', fid, 'freq');
   const inboxCol = (fid) => fb.collection(db, 'families', fid, 'inbox');
   const choresCol = (fid) => fb.collection(db, 'families', fid, 'chores');
+  const duesCol = (fid) => fb.collection(db, 'families', fid, 'dues');
+  const dueCatsCol = (fid) => fb.collection(db, 'families', fid, 'duecats');
   const eventsCol = (fid) => fb.collection(db, 'families', fid, 'events');
   const rostersCol = (fid) => fb.collection(db, 'families', fid, 'rosters');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
@@ -305,6 +307,43 @@ async function createFirebaseStore(firebaseConfig) {
 
     setChoreTranslation(fid, id, lang, text, auto) {
       return fb.updateDoc(fb.doc(choresCol(fid), id), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
+    },
+
+    // ---------- 📋 到期 ----------
+    subscribeDues(fid, cb, onError) {
+      return fb.onSnapshot(duesCol(fid), (snap) => cb(readDocs(snap)), onError);
+    },
+
+    async addDue(fid, data) {
+      const ref = fb.doc(duesCol(fid));
+      await fb.setDoc(ref, { ...data, createdAt: fb.serverTimestamp() });
+      return ref.id;
+    },
+
+    updateDue(fid, id, patch) {
+      return fb.updateDoc(fb.doc(duesCol(fid), id), patch);
+    },
+
+    deleteDue(fid, id) {
+      return fb.deleteDoc(fb.doc(duesCol(fid), id));
+    },
+
+    setDueTranslation(fid, id, lang, text, auto) {
+      return fb.updateDoc(fb.doc(duesCol(fid), id), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
+    },
+
+    subscribeDueCats(fid, cb, onError) {
+      return fb.onSnapshot(dueCatsCol(fid), (snap) => cb(readDocs(snap)), onError);
+    },
+
+    // 即刻有 ID（離線都得），saved 等伺服器確認
+    addDueCat(fid, data) {
+      const ref = fb.doc(dueCatsCol(fid));
+      return { id: ref.id, saved: fb.setDoc(ref, { ...data, createdAt: fb.serverTimestamp() }) };
+    },
+
+    deleteDueCat(fid, id) {
+      return fb.deleteDoc(fb.doc(dueCatsCol(fid), id));
     },
 
     // ---------- ✈️ roster（doc ID = 食飯成員 ID）----------
@@ -746,6 +785,57 @@ function createLocalStore() {
       if (!c) return;
       c.tr = { ...c.tr, [lang]: text };
       c.trAuto = { ...c.trAuto, [lang]: auto };
+      save();
+    },
+
+    subscribeDues(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.dues || {}).map(([id, d]) => ({ id, ...d }))));
+    },
+
+    async addDue(fid, data) {
+      const f = fam(fid);
+      f.dues = f.dues || {};
+      const id = randomId();
+      f.dues[id] = { ...data, createdAt: Date.now() };
+      save();
+      return id;
+    },
+
+    async updateDue(fid, id, patch) {
+      const d = fam(fid).dues?.[id];
+      if (!d) return;
+      Object.assign(d, patch);
+      save();
+    },
+
+    async deleteDue(fid, id) {
+      delete fam(fid).dues?.[id];
+      save();
+    },
+
+    async setDueTranslation(fid, id, lang, text, auto) {
+      const d = fam(fid).dues?.[id];
+      if (!d) return;
+      d.tr = { ...d.tr, [lang]: text };
+      d.trAuto = { ...d.trAuto, [lang]: auto };
+      save();
+    },
+
+    subscribeDueCats(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.duecats || {}).map(([id, d]) => ({ id, ...d }))));
+    },
+
+    addDueCat(fid, data) {
+      const f = fam(fid);
+      f.duecats = f.duecats || {};
+      const id = randomId();
+      f.duecats[id] = { ...data, createdAt: Date.now() };
+      save();
+      return { id, saved: Promise.resolve() };
+    },
+
+    async deleteDueCat(fid, id) {
+      delete fam(fid).duecats?.[id];
       save();
     },
 

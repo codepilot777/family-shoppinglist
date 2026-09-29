@@ -27,7 +27,7 @@ export default async function ({ device }) {
   for (const d of devs.documents) await patch(d.name.split('/documents/')[1], { role: 'member' });
 
   // 未有管理員：姐姐都用晒
-  await until(async () => (await tabsOf(siti)).length === 4, { message: 'no admin → everyone sees all tabs' });
+  await until(async () => (await tabsOf(siti)).length === 5, { message: 'no admin → everyone sees all tabs' });
 
   // 媽媽撳「我係管理員」
   await mum.click('#settings-btn');

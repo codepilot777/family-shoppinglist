@@ -194,6 +194,36 @@ await test('chores: valid chore saved/updated; bad schedule, extra fields and re
   await assertSucceeds(deleteDoc(doc(db('carol'), ref.path)));
 });
 
+await test('dues: valid item saved/paid/closed; bad schedule, amounts, extra fields and removed devices rejected', async () => {
+  const col = (uid) => collection(db(uid), `families/${FID}/dues`);
+  const ok = { name: '差餉', lang: 'zh', tr: { zh: '差餉' }, trAuto: {}, cat: 'bill', every: 3, unit: 'month', start: '2026-10-31', due: '2026-10-31', warn: 14, who: 'm1', amount: 238000, auto: false, note: '', closed: false, history: [], by: 'Dad', createdAt: serverTimestamp() };
+  const ref = await addDoc(col('carol'), ok);
+  await assertSucceeds(updateDoc(doc(db('carol'), ref.path), { due: '2027-01-31', lastDone: '2026-10-30', lastBy: 'Dad', amount: 241000, history: [{ d: '2026-10-30', a: 241000 }] }));
+  await assertSucceeds(addDoc(col('carol'), { ...ok, name: '護照到期', cat: 'doc', unit: 'once', amount: 0, warn: 180 }));
+  await assertSucceeds(addDoc(col('carol'), { ...ok, cat: 'customCatId', unit: 'year', auto: true }));
+  await assertSucceeds(updateDoc(doc(db('carol'), ref.path), { closed: true }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { unit: 'day' }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { every: 100 }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { warn: 400 }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { amount: -5 }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { amount: 12.5 }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { auto: 'yes' }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { history: Array.from({ length: 13 }, () => ({ d: '2026-01-01', a: 1 })) }));
+  await assertFails(addDoc(col('carol'), { ...ok, due: '31/10' }));
+  await assertFails(addDoc(col('carol'), { ...ok, secret: 1 }));
+  await assertFails(addDoc(col('carol'), { ...ok, name: '' }));
+  await assertFails(addDoc(col('bob'), ok));
+  await assertFails(getDocs(col('bob')));
+  await assertSucceeds(deleteDoc(doc(db('carol'), ref.path)));
+  // 自己加類別
+  const cats = (uid) => collection(db(uid), `families/${FID}/duecats`);
+  const cat = await addDoc(cats('carol'), { name: '車', icon: '🚗', by: 'Dad', createdAt: serverTimestamp() });
+  await assertFails(addDoc(cats('carol'), { name: '', icon: '🚗' }));
+  await assertFails(addDoc(cats('carol'), { name: '車', icon: '🚗', color: 'red' }));
+  await assertFails(getDocs(cats('bob')));
+  await assertSucceeds(deleteDoc(doc(db('carol'), cat.path)));
+});
+
 await test('events: valid event saved/updated; bad date/time, extra fields and removed devices rejected', async () => {
   const col = (uid) => collection(db(uid), `families/${FID}/events`);
   const ok = { title: '家長日', lang: 'zh', tr: { zh: '家長日' }, trAuto: {}, date: '2026-10-08', time: '19:00', who: 'm1', note: '帶手冊', photo: 'p1', by: 'Mum', createdAt: serverTimestamp() };
@@ -262,6 +292,9 @@ await test('member gets shop + dinner by default; other tabs are unreadable and 
   await assertFails(getDocs(col('bea', 'wallet')));
   await assertFails(getDocs(col('bea', 'inbox')));
   await assertFails(getDocs(col('bea', 'chores')));
+  await assertFails(getDocs(col('bea', 'dues')));
+  await assertFails(getDocs(col('bea', 'duecats')));
+  await assertFails(addDoc(col('bea', 'dues'), { name: '差餉', cat: 'bill', every: 3, unit: 'month', start: '2026-10-31', due: '2026-10-31' }));
   await assertFails(addDoc(col('bea', 'wallet'), { type: 'expense', amount: 100, date: '2026-10-01' }));
 });
 
@@ -279,8 +312,10 @@ await test('member cannot change own access, family name, invite code or other d
 });
 
 await test('admin grants tabs → member can use them; admin can promote, rename, rotate and remove', async () => {
-  await assertSucceeds(updateDoc(devRef('amy', 'bea'), { tabs: ['dinner', 'wallet'] }));
+  await assertSucceeds(updateDoc(devRef('amy', 'bea'), { tabs: ['dinner', 'wallet', 'dues'] }));
   await assertSucceeds(getDocs(col('bea', 'wallet')));
+  await assertSucceeds(getDocs(col('bea', 'dues')));
+  await assertSucceeds(addDoc(col('bea', 'duecats'), { name: '狗仔', icon: '🐶' }));
   await assertFails(getDocs(col('bea', 'items'))); // 購物拎走咗
   await assertSucceeds(updateDoc(fam('bea'), { walletLow: 10000 }));
   await assertFails(updateDoc(devRef('amy', 'bea'), { tabs: ['shop', 'bills'] })); // 未有嘅分頁
