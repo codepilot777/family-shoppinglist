@@ -74,4 +74,20 @@ assert.equal(choreMsgs[1].data.body, 'Ganti seprai (terlambat), Lap jendela kaca
 assert.match(choreMsgs[1].data.url, /view=chores$/);
 assert.equal(buildMessages({ mode: 'cutoff', today: '2026-09-29', members, dinners, devices, appUrl, chores }).filter((m) => m.data.tag === 'chores').length, 0);
 
+// 📅 事項：當日朝早發俾相關嘅人，排時間，冇時間就寫「全日」
+const events = [
+  { title: '家長日', date: '2026-09-29', time: '19:00', who: 'dad', note: '帶手冊' },
+  { title: '覆診', date: '2026-09-29', time: '', who: 'dad' },
+  { title: '學校旅行', date: '2026-09-30', time: '08:00', who: 'dad' },
+  { title: 'Hari libur', date: '2026-09-29', time: '', who: '' },
+  { title: '打針', tr: { id: 'Suntik' }, date: '2026-09-29', time: '10:30', who: 'siti' },
+];
+msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, events }).filter((m) => m.data.tag === 'events');
+assert.deepEqual(msgs.map((m) => m.key), ['k1', 'k3']);
+assert.equal(msgs[0].data.title, '📅 今日：全日 覆診');
+assert.equal(msgs[0].data.body, '全日 覆診\n19:00 家長日 · 帶手冊');
+assert.match(msgs[0].data.url, /cal=2026-09-29$/);
+assert.equal(msgs[1].data.title, '📅 Hari ini: 10:30 Suntik');
+assert.equal(buildMessages({ mode: 'weekly', today: '2026-09-29', members, dinners, devices, appUrl, events }).filter((m) => m.data.tag === 'events').length, 0);
+
 console.log('messages.test.mjs: all passed');

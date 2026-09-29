@@ -4,6 +4,7 @@ import { openDevices, deviceLabel, familyCode, parseFamilyCode } from './devices
 import { watchForUpdates } from './update.js';
 import { initWallet, walletOnEnterFamily, renderWallet, openExpense, snapReceipts } from './wallet-view.js';
 import { initChores, choresOnEnterFamily, renderChores } from './chores-view.js';
+import { initCalendar, calendarOnEnterFamily, openCalendar } from './calendar-view.js';
 import { topFrequent, freqKey } from './freq.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
@@ -103,6 +104,7 @@ async function boot() {
   initDinner({ state });
   initWallet({ state });
   initChores({ state });
+  initCalendar({ state, visibleViews: () => visibleViews(), go: (view) => showView(view) });
 
   try {
     state.store = await createStore();
@@ -116,6 +118,9 @@ async function boot() {
   if (!state.me || !state.familyId) return renderSetup({});
   enterFamily(state.familyId);
   handleDinnerParams(params);
+  // 通知連結：?cal=YYYY-MM-DD 開日曆
+  const calDate = params.get('cal');
+  if (calDate && /^\d{4}-\d{2}-\d{2}$/.test(calDate)) openCalendar(calDate);
 }
 
 function renderFatal(err) {
@@ -389,6 +394,7 @@ function enterFamily(fid) {
     ...dinnerOnEnterFamily(fid),
     ...walletOnEnterFamily(fid),
     ...choresOnEnterFamily(fid),
+    ...calendarOnEnterFamily(fid),
     s.subscribeFreq(
       fid,
       (docs) => {
@@ -457,6 +463,7 @@ function renderShell() {
       <h1 id="family-title"></h1>
       <span class="offline ${navigator.onLine ? 'hidden' : ''}" id="offline">${esc(t('offline'))}</span>
       ${canInstall() ? `<button class="icon-btn" id="install-btn" aria-label="${esc(t('install'))}" title="${esc(t('install'))}">📲</button>` : ''}
+      <button class="icon-btn" id="cal-btn" aria-label="${esc(t('calendar'))}" title="${esc(t('calendar'))}">📅</button>
       <button class="icon-btn" id="invite-btn" aria-label="${esc(t('invite'))}" title="${esc(t('invite'))}">👪</button>
       <button class="icon-btn" id="settings-btn" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">⚙️</button>
     </header>
@@ -494,6 +501,7 @@ function renderShell() {
 
   renderTitle();
   $('#invite-btn').onclick = openInvite;
+  $('#cal-btn').onclick = () => openCalendar();
   $('#install-btn')?.addEventListener('click', () => openInstall({ inviteLink: inviteLink(), familyId: state.familyId }));
   document.querySelectorAll('.views [data-view]').forEach((b) => (b.onclick = () => showView(b.dataset.view)));
   showView(ls.get('fsl-view') || 'shop');

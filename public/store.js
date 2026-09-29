@@ -76,6 +76,7 @@ async function createFirebaseStore(firebaseConfig) {
   const freqCol = (fid) => fb.collection(db, 'families', fid, 'freq');
   const inboxCol = (fid) => fb.collection(db, 'families', fid, 'inbox');
   const choresCol = (fid) => fb.collection(db, 'families', fid, 'chores');
+  const eventsCol = (fid) => fb.collection(db, 'families', fid, 'events');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -274,6 +275,27 @@ async function createFirebaseStore(firebaseConfig) {
 
     setChoreTranslation(fid, id, lang, text, auto) {
       return fb.updateDoc(fb.doc(choresCol(fid), id), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
+    },
+
+    // ---------- 📅 事項 ----------
+    subscribeEvents(fid, cb, onError) {
+      return fb.onSnapshot(eventsCol(fid), (snap) => cb(readDocs(snap)), onError);
+    },
+
+    addEvent(fid, ev) {
+      return fb.addDoc(eventsCol(fid), { ...ev, createdAt: fb.serverTimestamp() });
+    },
+
+    updateEvent(fid, id, patch) {
+      return fb.updateDoc(fb.doc(eventsCol(fid), id), patch);
+    },
+
+    deleteEvent(fid, id) {
+      return fb.deleteDoc(fb.doc(eventsCol(fid), id));
+    },
+
+    setEventTranslation(fid, id, lang, text, auto) {
+      return fb.updateDoc(fb.doc(eventsCol(fid), id), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
     },
 
     // 某一晚揀咗邊啲菜式
@@ -663,6 +685,36 @@ function createLocalStore() {
       if (!c) return;
       c.tr = { ...c.tr, [lang]: text };
       c.trAuto = { ...c.trAuto, [lang]: auto };
+      save();
+    },
+
+    subscribeEvents(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.events || {}).map(([id, e]) => ({ id, ...e }))));
+    },
+
+    async addEvent(fid, ev) {
+      const f = fam(fid);
+      f.events = { ...f.events, [randomId()]: { ...ev, createdAt: Date.now() } };
+      save();
+    },
+
+    async updateEvent(fid, id, patch) {
+      const e = fam(fid).events?.[id];
+      if (!e) return;
+      Object.assign(e, patch);
+      save();
+    },
+
+    async deleteEvent(fid, id) {
+      delete fam(fid).events?.[id];
+      save();
+    },
+
+    async setEventTranslation(fid, id, lang, text, auto) {
+      const e = fam(fid).events?.[id];
+      if (!e) return;
+      e.tr = { ...e.tr, [lang]: text };
+      e.trAuto = { ...e.trAuto, [lang]: auto };
       save();
     },
 
