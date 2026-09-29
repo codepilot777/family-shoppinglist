@@ -111,3 +111,27 @@ export async function until(fn, { timeout = 10000, message = 'condition' } = {})
   }
   throw new Error(`timed out waiting for ${message} (last: ${JSON.stringify(last)})`);
 }
+
+// 👑 管理員喺「📱 已連接嘅機」改某人嘅權限：tabs = ['shop', 'dinner', …] 或者 'admin'
+export async function grant(admin, name, tabs) {
+  await admin.click('#settings-btn');
+  await admin.click('#open-devices');
+  const row = admin.locator('.device-list .item', { hasText: name });
+  await row.locator('.device-access').click();
+  await admin.waitForSelector('#access-form');
+  if (tabs === 'admin') {
+    await admin.click('#access-form label:has(input[name="role"][value="admin"])');
+  } else {
+    await admin.click('#access-form label:has(input[name="role"][value="member"])');
+    for (const box of await admin.locator('#access-form input[name="tabs"]').all()) {
+      const want = tabs.includes(await box.getAttribute('value'));
+      if ((await box.isChecked()) !== want) await box.evaluate((el) => el.closest('label').click());
+    }
+  }
+  await admin.click('#access-form .btn.primary');
+  await admin.waitForSelector('.device-list');
+  await admin.click('#dialog [data-close]');
+}
+
+// 部機見到嘅分頁（冇分頁列 = 得一個或者冇）
+export const tabsOf = async (page) => (await page.locator('.views:not(.hidden) [data-view]').evaluateAll((els) => els.map((e) => e.dataset.view)));

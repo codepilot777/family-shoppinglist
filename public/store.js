@@ -105,18 +105,33 @@ async function createFirebaseStore(firebaseConfig) {
       return snap.exists() ? { id: fid, ...snap.data() } : null;
     },
 
-    // 新家庭一開始就有邀請代碼，建立者部機即刻登記
+    // 新家庭一開始就有邀請代碼，建立者部機即刻登記做 👑 管理員（同一個 batch）
     async createFamily(name, firstListName, device) {
       const fid = randomId();
       let joinCode = randomId(12);
       try {
-        await fb.setDoc(familyRef(fid), { name, joinCode, createdAt: fb.serverTimestamp() });
-        await registerDevice(fid, joinCode, device);
+        const batch = fb.writeBatch(db);
+        batch.set(familyRef(fid), { name, joinCode, hasAdmin: true, createdAt: fb.serverTimestamp() });
+        batch.set(fb.doc(devicesCol(fid), auth.currentUser.uid), {
+          code: joinCode,
+          name: device?.name || '',
+          label: device?.label || '',
+          role: 'admin',
+          lastSeen: fb.serverTimestamp(),
+        });
+        await batch.commit();
       } catch (err) {
         if (err?.code !== 'permission-denied') throw err;
-        // Firestore rules 未更新：照舊式開（之後更新 rules 再「換新邀請代碼」就會鎖好）
-        joinCode = '';
-        await fb.setDoc(familyRef(fid), { name, createdAt: fb.serverTimestamp() });
+        try {
+          // Firestore rules 未有管理員功能：照以前咁開（之後可以撳「我係管理員」）
+          await fb.setDoc(familyRef(fid), { name, joinCode, createdAt: fb.serverTimestamp() });
+          await registerDevice(fid, joinCode, device);
+        } catch (err2) {
+          if (err2?.code !== 'permission-denied') throw err2;
+          // Firestore rules 好舊：照舊式開（之後更新 rules 再「換新邀請代碼」就會鎖好）
+          joinCode = '';
+          await fb.setDoc(familyRef(fid), { name, createdAt: fb.serverTimestamp() });
+        }
       }
       await fb.addDoc(listsCol(fid), { name: firstListName, createdAt: fb.serverTimestamp() });
       return { fid, joinCode };
@@ -205,9 +220,22 @@ async function createFirebaseStore(firebaseConfig) {
       return batch.commit();
     },
 
-    // cb(true/false)：呢部機仲有冇登記
+    // cb(呢部機嘅登記 { role, tabs, … } 或者 null = 已經被移除)
     subscribeOwnDevice(fid, cb, onError) {
-      return fb.onSnapshot(fb.doc(devicesCol(fid), auth.currentUser.uid), (snap) => cb(snap.exists()), onError);
+      return fb.onSnapshot(fb.doc(devicesCol(fid), auth.currentUser.uid), (snap) => cb(snap.exists() ? snap.data() : null), onError);
+    },
+
+    // 👑 家庭未有管理員：呢部機做第一個管理員
+    claimAdmin(fid) {
+      const batch = fb.writeBatch(db);
+      batch.update(familyRef(fid), { hasAdmin: true });
+      batch.update(fb.doc(devicesCol(fid), auth.currentUser.uid), { role: 'admin' });
+      return batch.commit();
+    },
+
+    // 👑 管理員改某部機：{ role: 'admin'|'member', tabs: [...] }
+    setDeviceAccess(fid, uid, access) {
+      return fb.updateDoc(fb.doc(devicesCol(fid), uid), access);
     },
 
     // 換新邀請代碼：舊連結即時失效，已登記嘅機唔受影響
@@ -521,8 +549,10 @@ function createLocalStore() {
       const fid = randomId();
       const lid = randomId();
       const joinCode = randomId(12);
-      data.families[fid] = { name, joinCode, lists: { [lid]: { name: firstListName, createdAt: Date.now() } }, items: {} };
+      data.families[fid] = { name, joinCode, hasAdmin: true, lists: { [lid]: { name: firstListName, createdAt: Date.now() } }, items: {} };
       await this.registerDevice(fid, joinCode, device);
+      data.families[fid].devices[this.uid].role = 'admin';
+      save();
       return { fid, joinCode };
     },
 
@@ -531,7 +561,7 @@ function createLocalStore() {
       const f = fam(fid);
       const cur = f?.devices?.[this.uid];
       if (!f || (code !== (f.joinCode ?? fid) && code !== cur?.code)) throw Object.assign(new Error('permission-denied'), { code: 'permission-denied' });
-      f.devices = { ...f.devices, [this.uid]: { code, name: info?.name || '', label: info?.label || '', lastSeen: Date.now() } };
+      f.devices = { ...f.devices, [this.uid]: { ...cur, code, name: info?.name || '', label: info?.label || '', lastSeen: Date.now() } };
       save();
     },
 
@@ -545,7 +575,19 @@ function createLocalStore() {
     },
 
     subscribeOwnDevice(fid, cb) {
-      return watch(() => cb(!!fam(fid)?.devices?.[this.uid]));
+      return watch(() => cb(fam(fid)?.devices?.[this.uid] || null));
+    },
+
+    async claimAdmin(fid) {
+      const f = fam(fid);
+      f.hasAdmin = true;
+      f.devices[this.uid].role = 'admin';
+      save();
+    },
+
+    async setDeviceAccess(fid, uid, access) {
+      Object.assign(fam(fid).devices[uid], access);
+      save();
     },
 
     subscribeFreq(fid, cb) {

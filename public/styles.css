@@ -399,6 +399,9 @@ body.dinner-mode #app { padding-bottom: calc(2rem + env(safe-area-inset-bottom))
 }
 .devices-btn { margin-top: 0.625rem; }
 .device-list .item { padding-right: 0.75rem; }
+.device-actions { display: flex; flex-direction: column; gap: 0.375rem; align-items: stretch; }
+.access-line { color: var(--text); }
+.claim-admin { margin-top: 0.5rem; }
 .device-list .toggle { cursor: default; }
 
 /* ---------- 💰 家用 ---------- */

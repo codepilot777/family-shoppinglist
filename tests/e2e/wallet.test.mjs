@@ -1,7 +1,7 @@
 // 💰 家用：入錢、記支出（連已買貨品）、入錢前對數、📷 影單 → 未入數嘅單 → 入數
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { createFamily, join, text, texts, until } from './lib.mjs';
+import { createFamily, join, grant, text, texts, until } from './lib.mjs';
 
 const IMG = fileURLToPath(new URL('../../public/icons/icon-512.png', import.meta.url));
 const balance = (p) => text(p, '.wallet-card .big-count');
@@ -11,6 +11,8 @@ export default async function ({ device }) {
   const link = await createFamily(mum, '太太');
   const siti = await device('siti', { locale: 'id-ID', camera: true });
   await join(siti, link, 'Siti');
+  await grant(mum, 'Siti', ['shop', 'dinner', 'wallet']);
+  await until(async () => (await siti.locator('.views [data-view="wallet"]').count()) === 1, { message: 'siti gets wallet tab' });
 
   // 姐姐買咗菜心
   await siti.fill('#add-name', '菜心');

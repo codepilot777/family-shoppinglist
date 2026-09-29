@@ -34,6 +34,9 @@ const state = {
   items: [],
   listId: null,
   unsubs: [],
+  dataUnsubs: [], // 跟權限開嘅資料訂閱（權限改咗會重開）
+  access: null, // { admin, hasAdmin, legacy, tabs }
+  accessSig: '',
   freq: [],
 };
 
@@ -324,6 +327,10 @@ function joinFamily(fid) {
 function resetFamily() {
   state.unsubs.forEach((u) => u());
   state.unsubs = [];
+  state.dataUnsubs.forEach((u) => u());
+  state.dataUnsubs = [];
+  state.access = null;
+  state.accessSig = '';
   state.familyId = null;
   state.family = null;
   state.lists = [];
@@ -344,71 +351,121 @@ function leaveFamily() {
 
 // ---------- 主畫面 ----------
 
+// 👑 權限：舊式家庭 / 未有管理員 / 示範模式 → 用晒；管理員 → 用晒；屋企人 → 管理員畀佢嘅分頁
+const ALL_TABS = ['shop', 'dinner', 'chores', 'wallet'];
+const DEFAULT_TABS = ['shop', 'dinner'];
+function computeAccess(fam, dev) {
+  const legacy = !fam?.joinCode;
+  const hasAdmin = !!fam?.hasAdmin;
+  if (state.store.mode === 'local' || legacy || !hasAdmin) return { admin: false, hasAdmin, legacy, tabs: ALL_TABS };
+  const admin = dev?.role === 'admin';
+  const granted = Array.isArray(dev?.tabs) ? dev.tabs : DEFAULT_TABS;
+  return { admin, hasAdmin, legacy, tabs: admin ? ALL_TABS : ALL_TABS.filter((tab) => granted.includes(tab)) };
+}
+const canTab = (tab) => !!state.access?.tabs.includes(tab);
+
 function enterFamily(fid) {
   state.unsubs.forEach((u) => u());
+  state.dataUnsubs.forEach((u) => u());
+  state.dataUnsubs = [];
+  state.access = null;
+  state.accessSig = '';
   state.listId = ls.get(`fsl-list-${fid}`);
-  renderShell();
 
   const s = state.store;
   touchDevice(fid);
   let registered = false;
+  let fam; // undefined = 未知
+  let dev;
+  // 家庭同呢部機嘅登記都知道咗先開畫面；之後權限有變就即刻換
+  const update = () => {
+    if (fam === undefined || dev === undefined) return;
+    const access = computeAccess(fam, dev);
+    const sig = JSON.stringify(access);
+    if (sig === state.accessSig) return;
+    state.access = access;
+    state.accessSig = sig;
+    startData(fid);
+  };
   state.unsubs = [
     s.subscribeFamily(
       fid,
-      (fam) => {
-        state.family = fam;
+      (f) => {
+        state.family = f;
+        fam = f;
         renderTitle();
         renderDinner(); // 買餸日設定喺 family doc
         renderWallet(); // 低餘額提醒設定都喺 family doc
+        update();
       },
       onListenError,
     ),
-    // 呢部機嘅登記被刪咗（已鎖好嘅家庭）→ 即刻退出
+    // 呢部機嘅登記被刪咗（已鎖好嘅家庭）→ 即刻退出；權限改咗 → 重開畫面
     s.subscribeOwnDevice(
       fid,
-      (exists) => {
-        if (exists) registered = true;
-        else if (registered && state.family?.joinCode) onListenError({ code: 'permission-denied' });
+      (d) => {
+        if (d) registered = true;
+        else if (registered && state.family?.joinCode) return onListenError({ code: 'permission-denied' });
+        dev = d;
+        update();
       },
       onListenError,
-    ),
-    s.subscribeLists(
-      fid,
-      (lists) => {
-        state.lists = lists.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-        if (!state.lists.some((l) => l.id === state.listId)) selectList(state.lists[0]?.id || null, false);
-        render();
-      },
-      onListenError,
-    ),
-    s.subscribeItems(
-      fid,
-      (items) => {
-        state.items = items;
-        render();
-      },
-      onListenError,
-    ),
-    s.subscribeDict(fid, (entries) => {
-      setFamilyDictionary(entries);
-      render();
-    }),
-    ...dinnerOnEnterFamily(fid),
-    ...walletOnEnterFamily(fid),
-    ...choresOnEnterFamily(fid),
-    ...calendarOnEnterFamily(fid),
-    s.subscribeFreq(
-      fid,
-      (docs) => {
-        state.freq = docs;
-        render();
-      },
-      (err) => console.warn('freq', err),
     ),
   ];
 }
 
-// 分頁：每部機自己揀顯示邊啲（至少一個）
+// 淨係訂閱有權限嘅資料（冇權限嘅 Firestore 會拒絕）
+function startData(fid) {
+  const s = state.store;
+  state.dataUnsubs.forEach((u) => u());
+  renderShell();
+  const subs = [
+    s.subscribeDict(fid, (entries) => {
+      setFamilyDictionary(entries);
+      render();
+    }),
+    ...dinnerOnEnterFamily(fid, { dinner: canTab('dinner') }),
+    ...calendarOnEnterFamily(fid),
+  ];
+  if (canTab('shop')) {
+    subs.push(
+      s.subscribeLists(
+        fid,
+        (lists) => {
+          state.lists = lists.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+          if (!state.lists.some((l) => l.id === state.listId)) selectList(state.lists[0]?.id || null, false);
+          render();
+        },
+        onListenError,
+      ),
+      s.subscribeItems(
+        fid,
+        (items) => {
+          state.items = items;
+          render();
+        },
+        onListenError,
+      ),
+      s.subscribeFreq(
+        fid,
+        (docs) => {
+          state.freq = docs;
+          render();
+        },
+        (err) => console.warn('freq', err),
+      ),
+    );
+  } else {
+    state.lists = [];
+    state.items = [];
+    state.freq = [];
+  }
+  if (canTab('wallet')) subs.push(...walletOnEnterFamily(fid));
+  if (canTab('chores')) subs.push(...choresOnEnterFamily(fid));
+  state.dataUnsubs = subs;
+}
+
+// 分頁（跟權限）
 const VIEWS = [
   ['shop', 'viewShop'],
   ['dinner', 'viewDinner'],
@@ -416,17 +473,14 @@ const VIEWS = [
   ['wallet', 'viewWallet'],
 ];
 function visibleViews() {
-  let saved = [];
-  try {
-    saved = JSON.parse(ls.get('fsl-tabs') || '[]');
-  } catch {}
-  const shown = VIEWS.map(([v]) => v).filter((v) => !Array.isArray(saved) || !saved.length || saved.includes(v));
-  return shown.length ? shown : VIEWS.map(([v]) => v);
+  return VIEWS.map(([v]) => v).filter((v) => canTab(v));
 }
 
 function showView(view) {
   const shown = visibleViews();
   if (!shown.includes(view)) view = shown[0];
+  $('#no-access')?.classList.toggle('hidden', shown.length > 0);
+  if (!view) return;
   ls.set('fsl-view', view);
   document.querySelectorAll('.views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
   $('#shop-view')?.classList.toggle('hidden', view !== 'shop');
@@ -488,6 +542,7 @@ function renderShell() {
     </div>
     <main id="dinner" class="hidden"></main>
     <main id="wallet" class="hidden"></main>
+    <div id="no-access" class="empty hidden"><div class="big">🔒</div><p>${esc(t('noTabs'))}</p></div>
     <main id="chores" class="hidden"></main>
     <div class="addbar">
       <form id="add-form" autocomplete="off">
@@ -777,7 +832,7 @@ function stopShopping() {
   shopping.lock = null;
   document.body.classList.remove('shopping-mode');
   render();
-  if (bought) {
+  if (bought && canTab('wallet')) {
     openDialog(
       `<h2>🛒 ${esc(t('shopRecordPrompt', { n: bought }))}</h2>
       <div class="actions"><span class="spacer"></span>
@@ -1280,16 +1335,14 @@ function openSettings() {
           .map(([v, label]) => `<label><input type="radio" name="size" value="${v}" ${v === size ? 'checked' : ''}><span>${esc(label)}</span></label>`)
           .join('')}</div>
       </div>
-      <div class="field"><span>🗂 ${esc(t('visibleTabs'))}</span>
-        <div class="cats">${VIEWS.map(
-          ([v, key]) => `<label><input type="checkbox" name="tabs" value="${v}" ${visibleViews().includes(v) ? 'checked' : ''}><span>${esc(t(key))}</span></label>`,
-        ).join('')}</div>
-        <p class="small muted">${esc(t('visibleTabsHint'))}</p>
-      </div>
       <label class="field"><span>${esc(t('yourNameShort'))}</span><input class="input" name="me" maxlength="20" required value="${esc(state.me)}"></label>
-      <label class="field"><span>${esc(t('familyName'))}</span><input class="input" name="family" maxlength="30" required value="${esc(state.family?.name || '')}"></label>
       ${
-        list
+        !state.access?.hasAdmin || state.access.admin
+          ? `<label class="field"><span>${esc(t('familyName'))}</span><input class="input" name="family" maxlength="30" required value="${esc(state.family?.name || '')}"></label>`
+          : ''
+      }
+      ${
+        list && canTab('shop')
           ? `<label class="field"><span>${esc(t('currentListName'))}</span><input class="input" name="list" maxlength="30" required value="${esc(list.name)}"></label>
              ${kindPicker(isWish(list) ? 'wish' : 'shop')}`
           : ''
@@ -1322,10 +1375,6 @@ function openSettings() {
         const fam = clean(f.get('family'), 30);
         const ln = clean(f.get('list'), 30);
         const lang = f.get('lang');
-        const tabs = f.getAll('tabs');
-        if (!tabs.length) return toast(t('needOneTab'));
-        const tabsChanged = tabs.join() !== visibleViews().join();
-        if (tabsChanged) ls.set('fsl-tabs', tabs.length === VIEWS.length ? null : JSON.stringify(tabs));
         applyTextSize(f.get('size') || 'normal');
         if (me && me !== state.me) {
           rememberName(me);
@@ -1343,9 +1392,6 @@ function openSettings() {
           renderShell();
           render();
           refreshPushToken();
-        } else if (tabsChanged) {
-          renderShell();
-          render();
         }
         toast(t('saved'));
       };
