@@ -5,7 +5,6 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { hkNow, addDays } from '../../public/dates.js';
 import { buildMessages } from './messages.mjs';
-import { balance, DEFAULT_LOW } from '../../public/wallet.js';
 
 const { FIREBASE_SERVICE_ACCOUNT, MODE, APP_URL, DRY_RUN } = process.env;
 const dryRun = DRY_RUN === 'true';
@@ -35,14 +34,11 @@ for (const famRef of await db.collection('families').listDocuments()) {
   ]);
   if (pushSnap.empty || membersSnap.empty) continue;
 
-  const [famSnap, devicesSnap, recipesSnap, walletSnap, choresSnap, eventsSnap] = await Promise.all([
+  const [famSnap, devicesSnap, recipesSnap] = await Promise.all([
     famRef.get(),
     famRef.collection('devices').get(),
-    // 買餸日同錢包提示用（淨係朝早要）
+    // 買餸日用（淨係朝早要）
     MODE === 'daily' ? famRef.collection('recipes').get() : null,
-    MODE === 'daily' ? famRef.collection('wallet').get() : null,
-    MODE === 'daily' ? famRef.collection('chores').get() : null,
-    MODE === 'daily' ? famRef.collection('events').where('date', '==', today).get() : null,
   ]);
 
   const rosters = Object.fromEntries(rostersSnap.docs.map((d) => [d.id, d.data()]));
@@ -59,14 +55,8 @@ for (const famRef of await db.collection('families').listDocuments()) {
   const dinners = Object.fromEntries(dinnersSnap.docs.map((d) => [d.id, d.data()]));
   const recipes = recipesSnap ? recipesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
   const marketDays = famSnap?.data()?.marketDays || [];
-  const walletEntries = walletSnap ? walletSnap.docs.map((d) => d.data()) : [];
-  const walletLow = famSnap.data()?.walletLow;
-  const wallet = walletEntries.length
-    ? { balance: balance(walletEntries), low: Number.isInteger(walletLow) ? walletLow : DEFAULT_LOW }
-    : null;
-  const chores = choresSnap ? choresSnap.docs.map((d) => d.data()) : [];
-  const events = eventsSnap ? eventsSnap.docs.map((d) => d.data()) : [];
-  const messages = buildMessages({ mode: MODE, today, members, dinners, devices, appUrl: APP_URL, marketDays, recipes, wallet, chores, events });
+  // 只發食飯通知（家務、事項、錢包喺 app 入面睇）
+  const messages = buildMessages({ mode: MODE, today, members, dinners, devices, appUrl: APP_URL, marketDays, recipes });
   console.log(`family …${famRef.id.slice(-4)}: ${members.length} members, ${devices.length} devices, ${messages.length} messages`);
 
   for (const msg of messages) {

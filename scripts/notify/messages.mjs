@@ -2,8 +2,6 @@
 import { weekday, nextWeekStart, weekDates, formatDay } from '../../public/dates.js';
 import { attendance, summarize } from '../../public/dinner.js';
 import { marketWindow, collectIngredients } from '../../public/menu.js';
-import { dueToday } from '../../public/chores.js';
-import { DICT_INDEX } from '../../public/dictionary.js';
 
 const LOCALES = { zh: 'zh-Hant-HK', en: 'en', id: 'id' };
 
@@ -22,12 +20,6 @@ const TEXT = {
     everyoneHome: '全部返',
     guests: '（包括 {n} 位客）',
     market: '\n🧺 今日買餸：{n} 樣材料，打開 app 睇',
-    walletTitle: '💰 買餸錢包得返 {amount}',
-    walletBody: '低過 {limit}，記得入錢。',
-    choresTitle: '🧹 今日家務（{n} 樣）',
-    eventsTitle: '📅 今日：{what}',
-    allDay: '全日',
-    late: '（遲咗）',
     sep: '、',
   },
   en: {
@@ -44,12 +36,6 @@ const TEXT = {
     everyoneHome: 'Everyone home',
     guests: ' (incl. {n} guest(s))',
     market: '\n🧺 Shopping day: {n} ingredient(s) — open the app',
-    walletTitle: '💰 Grocery wallet has {amount} left',
-    walletBody: 'Below {limit} — remember to top up.',
-    choresTitle: '🧹 Chores today ({n})',
-    eventsTitle: '📅 Today: {what}',
-    allDay: 'all day',
-    late: ' (late)',
     sep: ', ',
   },
   id: {
@@ -66,17 +52,10 @@ const TEXT = {
     everyoneHome: 'Semua di rumah',
     guests: ' (termasuk {n} tamu)',
     market: '\n🧺 Hari belanja: {n} bahan — buka aplikasi',
-    walletTitle: '💰 Uang belanja tinggal {amount}',
-    walletBody: 'Di bawah {limit} — jangan lupa diisi.',
-    choresTitle: '🧹 Tugas hari ini ({n})',
-    eventsTitle: '📅 Hari ini: {what}',
-    allDay: 'seharian',
-    late: ' (terlambat)',
     sep: ', ',
   },
 };
 
-const money = (c) => `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toLocaleString('en', { maximumFractionDigits: 2 })}`;
 const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
 
 function summaryBody(tx, sum) {
@@ -94,12 +73,10 @@ function summaryBody(tx, sum) {
  * @param appUrl 'https://…/family-shoppinglist/'
  * @param marketDays 買餸日 [0..6]（冇設定就唔提）
  * @param recipes 菜式庫（計今日買餸要幾多樣材料）
- * @param wallet { balance, low }（仙；冇紀錄就 null）
- * @param chores 家務 [{ name, tr, due, who }]（朝早通知負責人今日要做嘅）
- * @param events 📅 事項 [{ title, tr, date, time, who, note }]（朝早通知相關嘅人今日有咩）
+ * 只發食飯相關嘅通知（問卷、今晚確認、煮飯人數、截數）；家務、事項、錢包喺 app 入面睇就得
  * @returns [{ key, token, data: { title, body, url, tag, actions } }]
  */
-export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [], wallet = null, chores = [], events = [] }) {
+export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [] }) {
   const out = [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const tonight = summarize(members, today, dinners[today], weekday(today));
@@ -108,8 +85,6 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
   // 買餸日：由今日計到下個買餸日前，要買幾多樣（唔計常備）
   const win = marketDays.length ? marketWindow(today, marketDays) : null;
   const toBuy = win?.isMarketDay ? collectIngredients(win.dates, dinners, recipes).filter((x) => !x.staple).length : 0;
-  const choresDue = mode === 'daily' ? dueToday(chores, today) : [];
-  const eventsToday = mode === 'daily' ? events.filter((e) => e.date === today).sort((a, b) => (a.time || '').localeCompare(b.time || '')) : [];
 
   for (const dev of devices) {
     const m = byId.get(dev.memberId);
@@ -120,41 +95,6 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
     const push = (data) =>
       out.push({ key: dev.key, token: dev.token, data: { tag: `dinner-${mode}`, actions: '[]', ...data } });
 
-    // 🧹 今日（連過咗期）輪到佢嘅家務；揀「任何人」嘅唔發
-    const mine = choresDue.filter((c) => c.who === m.id);
-    if (mine.length) {
-      const name = (c) => c.tr?.[lang] || DICT_INDEX.get(String(c.name).trim().toLowerCase())?.[lang] || c.name;
-      out.push({
-        key: dev.key,
-        token: dev.token,
-        data: {
-          tag: 'chores',
-          actions: '[]',
-          title: fill(tx.choresTitle, { n: mine.length }),
-          body: mine.map((c) => name(c) + (c.due < today ? tx.late : '')).join(tx.sep),
-          url: url('view=chores'),
-        },
-      });
-    }
-
-    // 📅 今日同佢有關嘅事項（家長日、覆診…）；揀「任何人」嘅唔發
-    const myEvents = eventsToday.filter((e) => e.who === m.id);
-    if (myEvents.length) {
-      const title = (e) => e.tr?.[lang] || DICT_INDEX.get(String(e.title).trim().toLowerCase())?.[lang] || e.title;
-      const line = (e) => `${e.time || tx.allDay} ${title(e)}`;
-      out.push({
-        key: dev.key,
-        token: dev.token,
-        data: {
-          tag: 'events',
-          actions: '[]',
-          title: fill(tx.eventsTitle, { what: line(myEvents[0]) }),
-          body: myEvents.map((e) => line(e) + (e.note ? ` · ${e.note}` : '')).join('\n'),
-          url: url(`cal=${today}`),
-        },
-      });
-    }
-
     const eats = m.eats !== false;
     if (mode === 'weekly') {
       if (!eats || m.lastConfirmedWeek === weekStart) continue;
@@ -164,20 +104,6 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
       if (eats) {
         const a = attendance(m, today, dinners[today], weekday(today));
         const flip = a.home ? 'away' : 'home';
-        // 錢包就嚟用完：提醒食飯成員（即係俾錢嗰啲人）入錢
-        if (wallet && wallet.balance < wallet.low) {
-          out.push({
-            key: dev.key,
-            token: dev.token,
-            data: {
-              tag: 'wallet-low',
-              actions: '[]',
-              title: fill(tx.walletTitle, { amount: money(wallet.balance) }),
-              body: fill(tx.walletBody, { limit: money(wallet.low) }),
-              url: url('view=wallet'),
-            },
-          });
-        }
         push({
           title: tx.dailyTitle,
           body: a.home ? tx.dailyHome : tx.dailyAway,

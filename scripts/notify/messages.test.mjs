@@ -45,50 +45,12 @@ msgs = buildMessages({ mode: 'cutoff', today: '2026-09-29', members, dinners, de
 assert.deepEqual(msgs.map((m) => m.key), ['k3']);
 assert.ok(Object.values(msgs[0].data).every((v) => typeof v === 'string'), 'FCM data values must be strings');
 
-// 錢包低過提醒：只發俾食飯成員（俾錢嗰啲），唔發俾負責煮飯嘅人
-msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, wallet: { balance: 15050, low: 20000 } });
-const lowMsgs = msgs.filter((m) => m.data.tag === 'wallet-low');
-assert.deepEqual(lowMsgs.map((m) => m.key), ['k1', 'k2']);
-assert.equal(lowMsgs[0].data.title, '💰 買餸錢包得返 $150.5');
-assert.match(lowMsgs[1].data.body, /Below \$200/);
-assert.match(lowMsgs[0].data.url, /view=wallet/);
-msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, wallet: { balance: 50000, low: 20000 } });
-assert.equal(msgs.filter((m) => m.data.tag === 'wallet-low').length, 0);
-
-// 🧹 家務：朝早淨係發俾負責人，過咗期嘅標「遲咗」；任何人 / 未到期 / 截數時間都唔發
-const chores = [
-  { name: '換床單', due: '2026-09-28', who: 'siti' },
-  { name: '抹窗', tr: { id: 'Lap jendela kaca' }, due: '2026-09-29', who: 'siti' },
-  { name: '淋花', due: '2026-09-29', who: 'dad' },
-  { name: '洗廁所', due: '2026-09-29', who: '' },
-  { name: '清雪櫃', due: '2026-09-30', who: 'siti' },
-  { name: '倒回收', due: '2026-09-29', who: 'gran' },
-];
-msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, chores });
-const choreMsgs = msgs.filter((m) => m.data.tag === 'chores');
-assert.deepEqual(choreMsgs.map((m) => m.key), ['k1', 'k3']);
-assert.equal(choreMsgs[0].data.title, '🧹 今日家務（1 樣）');
-assert.equal(choreMsgs[0].data.body, '淋花');
-assert.equal(choreMsgs[1].data.title, '🧹 Tugas hari ini (2)');
-assert.equal(choreMsgs[1].data.body, 'Ganti seprai (terlambat), Lap jendela kaca');
-assert.match(choreMsgs[1].data.url, /view=chores$/);
-assert.equal(buildMessages({ mode: 'cutoff', today: '2026-09-29', members, dinners, devices, appUrl, chores }).filter((m) => m.data.tag === 'chores').length, 0);
-
-// 📅 事項：當日朝早發俾相關嘅人，排時間，冇時間就寫「全日」
-const events = [
-  { title: '家長日', date: '2026-09-29', time: '19:00', who: 'dad', note: '帶手冊' },
-  { title: '覆診', date: '2026-09-29', time: '', who: 'dad' },
-  { title: '學校旅行', date: '2026-09-30', time: '08:00', who: 'dad' },
-  { title: 'Hari libur', date: '2026-09-29', time: '', who: '' },
-  { title: '打針', tr: { id: 'Suntik' }, date: '2026-09-29', time: '10:30', who: 'siti' },
-];
-msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, events }).filter((m) => m.data.tag === 'events');
-assert.deepEqual(msgs.map((m) => m.key), ['k1', 'k3']);
-assert.equal(msgs[0].data.title, '📅 今日：全日 覆診');
-assert.equal(msgs[0].data.body, '全日 覆診\n19:00 家長日 · 帶手冊');
-assert.match(msgs[0].data.url, /cal=2026-09-29$/);
-assert.equal(msgs[1].data.title, '📅 Hari ini: 10:30 Suntik');
-assert.equal(buildMessages({ mode: 'weekly', today: '2026-09-29', members, dinners, devices, appUrl, events }).filter((m) => m.data.tag === 'events').length, 0);
+// 只發食飯通知：朝早每人最多一個（食飯確認 / 煮飯人數），冇家務、事項、錢包
+for (const mode of ['weekly', 'daily', 'cutoff']) {
+  const all = buildMessages({ mode, today: '2026-09-29', members, dinners, devices, appUrl });
+  assert.ok(all.every((m) => m.data.tag === `dinner-${mode}`), `${mode}: dinner messages only`);
+  assert.equal(new Set(all.map((m) => m.key)).size, all.length, `${mode}: at most one per device`);
+}
 
 // 🌴 姐姐放假：通知照舊（放假日只喺 app 度顯示）
 const withOff = members.map((m) => (m.id === 'siti' ? { ...m, roster: { off: ['2026-09-29'] } } : m));

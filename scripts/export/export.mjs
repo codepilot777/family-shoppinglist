@@ -4,7 +4,7 @@
 //     wallet/2026-09.csv        每月一個檔
 //     receipts/2026-09-28_街市_218.00_1.jpg   單據相（已經有就唔再下載）
 //     photos/<id>.jpg           其他相（貨品相）
-//     backup/<collection>.json  所有資料嘅完整備份（清單、貨品、食飯、菜式…）
+//     backup/<collection>.json  所有資料嘅完整備份（清單、貨品、食飯、菜式、家務、事項、roster、常買、未入數嘅單…）
 //     last-export.txt
 //
 // 環境變數：
@@ -35,7 +35,7 @@ if (FIRESTORE_EMULATOR_HOST) {
 const db = getFirestore();
 
 // 備份嘅 collection（push token 同邀請代碼唔匯出）
-const COLLECTIONS = ['lists', 'items', 'members', 'dinners', 'recipes', 'dict', 'wallet', 'devices'];
+const COLLECTIONS = ['lists', 'items', 'members', 'dinners', 'recipes', 'dict', 'wallet', 'devices', 'freq', 'chores', 'events', 'rosters', 'inbox'];
 
 const safe = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40) || '_';
 const exists = (p) => access(p).then(() => true, () => false);
