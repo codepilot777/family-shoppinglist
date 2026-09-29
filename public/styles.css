@@ -269,7 +269,7 @@ dialog h2 { margin: 0 0 1rem; font-size: 1.1875rem; }
 
 /* ---------- 🛒 / 🍚 切換 ---------- */
 .views {
-  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.25rem;
+  display: grid; grid-template-columns: repeat(var(--n, 3), 1fr); gap: 0.25rem;
   background: var(--surface-2); border-radius: 0.875rem; padding: 0.25rem; margin-bottom: 0.625rem;
 }
 .views button {

@@ -397,8 +397,24 @@ function enterFamily(fid) {
   ];
 }
 
+// 分頁：每部機自己揀顯示邊啲（至少一個）
+const VIEWS = [
+  ['shop', 'viewShop'],
+  ['dinner', 'viewDinner'],
+  ['wallet', 'viewWallet'],
+];
+function visibleViews() {
+  let saved = [];
+  try {
+    saved = JSON.parse(ls.get('fsl-tabs') || '[]');
+  } catch {}
+  const shown = VIEWS.map(([v]) => v).filter((v) => !Array.isArray(saved) || !saved.length || saved.includes(v));
+  return shown.length ? shown : VIEWS.map(([v]) => v);
+}
+
 function showView(view) {
-  if (!['shop', 'dinner', 'wallet'].includes(view)) view = 'shop';
+  const shown = visibleViews();
+  if (!shown.includes(view)) view = shown[0];
   ls.set('fsl-view', view);
   document.querySelectorAll('.views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
   $('#shop-view')?.classList.toggle('hidden', view !== 'shop');
@@ -438,10 +454,10 @@ function renderShell() {
       <button class="icon-btn" id="invite-btn" aria-label="${esc(t('invite'))}" title="${esc(t('invite'))}">👪</button>
       <button class="icon-btn" id="settings-btn" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">⚙️</button>
     </header>
-    <nav class="views">
-      <button data-view="shop">${esc(t('viewShop'))}</button>
-      <button data-view="dinner">${esc(t('viewDinner'))}</button>
-      <button data-view="wallet">${esc(t('viewWallet'))}</button>
+    <nav class="views ${visibleViews().length < 2 ? 'hidden' : ''}" style="--n:${visibleViews().length}">
+      ${VIEWS.filter(([v]) => visibleViews().includes(v))
+        .map(([v, key]) => `<button data-view="${v}">${esc(t(key))}</button>`)
+        .join('')}
     </nav>
     <div id="shop-view">
     <nav class="tabs" id="tabs" role="tablist" aria-label="${esc(t('lists'))}"></nav>
@@ -1244,6 +1260,12 @@ function openSettings() {
           .map(([v, label]) => `<label><input type="radio" name="size" value="${v}" ${v === size ? 'checked' : ''}><span>${esc(label)}</span></label>`)
           .join('')}</div>
       </div>
+      <div class="field"><span>🗂 ${esc(t('visibleTabs'))}</span>
+        <div class="cats">${VIEWS.map(
+          ([v, key]) => `<label><input type="checkbox" name="tabs" value="${v}" ${visibleViews().includes(v) ? 'checked' : ''}><span>${esc(t(key))}</span></label>`,
+        ).join('')}</div>
+        <p class="small muted">${esc(t('visibleTabsHint'))}</p>
+      </div>
       <label class="field"><span>${esc(t('yourNameShort'))}</span><input class="input" name="me" maxlength="20" required value="${esc(state.me)}"></label>
       <label class="field"><span>${esc(t('familyName'))}</span><input class="input" name="family" maxlength="30" required value="${esc(state.family?.name || '')}"></label>
       ${
@@ -1280,6 +1302,10 @@ function openSettings() {
         const fam = clean(f.get('family'), 30);
         const ln = clean(f.get('list'), 30);
         const lang = f.get('lang');
+        const tabs = f.getAll('tabs');
+        if (!tabs.length) return toast(t('needOneTab'));
+        const tabsChanged = tabs.join() !== visibleViews().join();
+        if (tabsChanged) ls.set('fsl-tabs', tabs.length === VIEWS.length ? null : JSON.stringify(tabs));
         applyTextSize(f.get('size') || 'normal');
         if (me && me !== state.me) {
           rememberName(me);
@@ -1297,6 +1323,9 @@ function openSettings() {
           renderShell();
           render();
           refreshPushToken();
+        } else if (tabsChanged) {
+          renderShell();
+          render();
         }
         toast(t('saved'));
       };
