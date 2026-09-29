@@ -74,6 +74,7 @@ async function createFirebaseStore(firebaseConfig) {
   const devicesCol = (fid) => fb.collection(db, 'families', fid, 'devices');
   const walletCol = (fid) => fb.collection(db, 'families', fid, 'wallet');
   const freqCol = (fid) => fb.collection(db, 'families', fid, 'freq');
+  const inboxCol = (fid) => fb.collection(db, 'families', fid, 'inbox');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -170,6 +171,35 @@ async function createFirebaseStore(firebaseConfig) {
 
     deleteWalletEntry(fid, id) {
       return fb.deleteDoc(fb.doc(walletCol(fid), id));
+    },
+
+    // 🧾 未入數嘅單：相照舊放 photos，收件匣只存細圖同邊個影
+    subscribeInbox(fid, cb, onError) {
+      return fb.onSnapshot(inboxCol(fid), (snap) => cb(readDocs(snap)), onError);
+    },
+
+    addInbox(fid, data, thumb, by) {
+      const photo = fb.doc(photosCol(fid));
+      const ref = fb.doc(inboxCol(fid));
+      const batch = fb.writeBatch(db);
+      batch.set(photo, { data, createdAt: fb.serverTimestamp() });
+      batch.set(ref, { photo: photo.id, thumb, by, createdAt: fb.serverTimestamp() });
+      return { id: ref.id, done: batch.commit() };
+    },
+
+    // 揀咗嘅單變成一筆支出（相留低做單據），同時喺收件匣拎走
+    saveInboxExpense(fid, entry, inboxIds) {
+      const batch = fb.writeBatch(db);
+      batch.set(fb.doc(walletCol(fid)), { ...entry, createdAt: fb.serverTimestamp() });
+      for (const id of inboxIds) batch.delete(fb.doc(inboxCol(fid), id));
+      return batch.commit();
+    },
+
+    deleteInbox(fid, id, photoId) {
+      const batch = fb.writeBatch(db);
+      batch.delete(fb.doc(inboxCol(fid), id));
+      if (photoId) batch.delete(fb.doc(photosCol(fid), photoId));
+      return batch.commit();
     },
 
     // cb(true/false)：呢部機仲有冇登記
@@ -488,6 +518,35 @@ function createLocalStore() {
 
     async deleteWalletEntry(fid, id) {
       delete fam(fid).wallet?.[id];
+      save();
+    },
+
+    subscribeInbox(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.inbox || {}).map(([id, r]) => ({ id, ...r }))));
+    },
+
+    addInbox(fid, data, thumb, by) {
+      const f = fam(fid);
+      const photo = randomId();
+      const id = randomId();
+      f.photos = { ...f.photos, [photo]: data };
+      f.inbox = { ...f.inbox, [id]: { photo, thumb, by, createdAt: Date.now() } };
+      save();
+      return { id, done: Promise.resolve() };
+    },
+
+    async saveInboxExpense(fid, entry, inboxIds) {
+      const f = fam(fid);
+      f.wallet = f.wallet || {};
+      f.wallet[randomId()] = { ...entry, createdAt: Date.now() };
+      for (const id of inboxIds) delete f.inbox?.[id];
+      save();
+    },
+
+    async deleteInbox(fid, id, photoId) {
+      const f = fam(fid);
+      delete f.inbox?.[id];
+      if (photoId) delete f.photos?.[photoId];
       save();
     },
 

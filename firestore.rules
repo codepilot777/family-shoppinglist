@@ -189,6 +189,18 @@ service cloud.firestore {
         && request.resource.data.get('receipts', []).size() <= 3;
     }
 
+    // 🧾 未入數嘅單：一次過影晒，之後先逐張入數（大相喺 photos，呢度得細圖）
+    match /families/{familyId}/inbox/{receiptId} {
+      allow read, delete: if canUse(familyId);
+      allow create: if canUse(familyId)
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['photo', 'thumb', 'by', 'createdAt'])
+        && shortString(request.resource.data.photo, 40)
+        && request.resource.data.photo.size() > 0
+        && shortString(request.resource.data.get('thumb', ''), 30000)
+        && shortString(request.resource.data.get('by', ''), 20);
+    }
+
     // ⭐ 常買：全家加過幾多次（doc ID = 細楷名）
     match /families/{familyId}/freq/{key} {
       allow read, delete: if canUse(familyId);

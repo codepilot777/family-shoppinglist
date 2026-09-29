@@ -4,14 +4,17 @@ import { $, esc, clean, toast, fail, openDialog, confirmDialog } from './ui.js';
 import { hkToday, formatDay } from './dates.js';
 import { toCents, balance, monthSummary, lastTopup, byNewest, toCSV, DEFAULT_LOW } from './wallet.js';
 import { lookup } from './translate.js';
-import { compressImage } from './image.js';
+import { compressImage, THUMB_OPTS } from './image.js';
+import { openCamera } from './camera.js';
 
 const RECEIPT_OPTS = { maxSide: 1600, maxChars: 700_000, quality: 0.85 };
 const MAX_RECEIPTS = 3;
 const PLACES = ['街市', '超市', '藥房', '麵包舖', '其他'];
+const MAX_INBOX = 30;
 
 let ctx;
 let entries = [];
+let inbox = [];
 let month = hkToday().slice(0, 7);
 
 export function initWallet(context) {
@@ -32,11 +35,20 @@ export function fmtMoney(cents, { sign = false } = {}) {
 
 export function walletOnEnterFamily(familyId) {
   entries = [];
+  inbox = [];
   return [
     store().subscribeWallet(
       familyId,
       (list) => {
         entries = list;
+        renderWallet();
+      },
+      fail,
+    ),
+    store().subscribeInbox(
+      familyId,
+      (list) => {
+        inbox = list.sort((a, b) => a.createdAt - b.createdAt);
         renderWallet();
       },
       fail,
@@ -70,10 +82,22 @@ export function renderWallet() {
     ${low ? `<div class="pill late">⚠️ ${esc(t('walletLow', { amount: fmtMoney(lowLimit()) }))}</div>` : ''}
     ${last ? `<p class="small muted">${esc(t('walletLastTopup', { day: formatDay(last.date, langInfo().htmlLang), who: last.by || '', amount: fmtMoney(last.amount) }))}</p>` : ''}
     <div class="row wallet-actions">
-      <button class="btn primary" id="w-expense">➖ ${esc(t('walletAddExpense'))}</button>
+      <button class="btn primary" id="w-snap">📷 ${esc(t('inboxSnap'))}</button>
+      <button class="btn" id="w-expense">➖ ${esc(t('walletAddExpense'))}</button>
       <button class="btn" id="w-topup">➕ ${esc(t('walletTopup'))}</button>
     </div>
   </section>`;
+
+  if (inbox.length) {
+    html += `<button class="card inbox-card" id="w-inbox">
+      <span class="inbox-thumbs">${inbox
+        .slice(0, 4)
+        .map((r) => (r.thumb ? `<img src="${esc(r.thumb)}" alt="">` : '<i>🧾</i>'))
+        .join('')}</span>
+      <span class="body"><b>🧾 ${esc(t('inboxCount', { n: inbox.length }))}</b><span class="small muted">${esc(t('inboxHint'))}</span></span>
+      <span class="chev" aria-hidden="true">›</span>
+    </button>`;
+  }
 
   html += `<div class="month-nav">
     <button class="icon-btn" id="w-prev" aria-label="‹">‹</button>
@@ -100,6 +124,8 @@ export function renderWallet() {
 
   root.innerHTML = html;
   $('#w-expense', root).onclick = () => openExpense();
+  $('#w-snap', root).onclick = () => snapReceipts();
+  $('#w-inbox', root)?.addEventListener('click', () => openInbox());
   $('#w-topup', root).onclick = openTopup;
   $('#w-prev', root).onclick = () => {
     month = shiftMonth(month, -1);
@@ -136,15 +162,25 @@ function entryRow(e) {
 
 // ---------- ➖ 記支出 ----------
 
-// 啱啱剔咗「已買」嘅嘢（自己 12 個鐘內），方便連埋支出；已經記入另一筆支出嘅唔再列
-function recentBought() {
-  const since = Date.now() - 12 * 3600 * 1000;
+// 某人喺某個時間之前 12 個鐘內剔咗「已買」嘅嘢，方便連埋支出；已經記入另一筆支出嘅唔再列
+function recentBought(who = state().me, at = Date.now()) {
+  const since = at - 12 * 3600 * 1000;
+  const until = at + 2 * 3600 * 1000;
   const recorded = new Set(
-    entries.filter((e) => e.type === 'expense' && e.by === state().me && (e.createdAt || 0) >= since).flatMap((e) => e.items || []),
+    entries.filter((e) => e.type === 'expense' && e.by === who && (e.createdAt || 0) >= since).flatMap((e) => e.items || []),
   );
-  const mine = state().items.filter((i) => i.done && i.doneAt >= since && i.doneBy === state().me && !recorded.has(i.name));
+  const mine = state().items.filter(
+    (i) => i.done && i.doneAt >= since && i.doneAt <= until && i.doneBy === who && !recorded.has(i.name),
+  );
   return [...new Set(mine.map((i) => i.name))];
 }
+
+const itemChecks = (names) =>
+  names.length
+    ? `<div class="field"><span>${esc(t('walletItems'))}</span><div class="cats">${names
+        .map((n) => `<label><input type="checkbox" name="items" value="${esc(n)}" checked><span>${esc(tr(n))}</span></label>`)
+        .join('')}</div></div>`
+    : '';
 
 function placeOptions(current) {
   const fromLists = state()
@@ -184,9 +220,7 @@ export function openExpense(entry) {
       <div class="field"><span>${esc(t('walletPlace'))}</span><div class="segmented">${placeOptions(entry?.place || PLACES[0])}</div></div>
       ${
         bought.length
-          ? `<div class="field"><span>${esc(t('walletItems'))}</span><div class="cats">${bought
-              .map((n) => `<label><input type="checkbox" name="items" value="${esc(n)}" checked><span>${esc(tr(n))}</span></label>`)
-              .join('')}</div></div>`
+          ? itemChecks(bought)
           : editing && (entry.items || []).length
             ? `<p class="small muted">${esc((entry.items || []).map(tr).join('、'))}</p>`
             : ''
@@ -242,6 +276,207 @@ export function openExpense(entry) {
       };
     },
   );
+}
+
+// ---------- 🧾 一次過影晒單，之後逐張入數 ----------
+
+const busy = new Set(); // 啱啱儲存 / 刪除緊，唔好再顯示
+
+export function snapReceipts() {
+  const room = MAX_INBOX - inbox.length;
+  if (room <= 0) return toast(t('inboxFull', { n: MAX_INBOX }));
+  let queue = Promise.resolve();
+  let failed = 0;
+  openCamera({
+    max: room,
+    // 逐張壓細（大相 + 細圖）即刻存，就算中途閂咗 app 都唔會唔見
+    onShot: (blob) => {
+      queue = queue.then(async () => {
+        try {
+          const [data, thumb] = await Promise.all([compressImage(blob, RECEIPT_OPTS), compressImage(blob, THUMB_OPTS)]);
+          store().addInbox(fid(), data, thumb, state().me).done.catch(fail);
+        } catch (err) {
+          console.error(err);
+          failed++;
+        }
+      });
+    },
+    onDone: (n) => {
+      if (!n) return;
+      toast(t('processingPhoto'));
+      queue.then(() => {
+        if (failed) toast(t('photoFailed'));
+        else $('#toast').classList.remove('show');
+        openInbox();
+      });
+    },
+  });
+}
+
+export function openInbox() {
+  const list = inbox.filter((r) => !busy.has(r.id));
+  if (!list.length) return;
+  const picked = new Set([list[0].id]);
+  let dateTouched = false;
+  const lang = langInfo().htmlLang;
+  const timeFmt = new Intl.DateTimeFormat(lang, { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Hong_Kong' });
+  openDialog(
+    `<form id="inbox-form" class="inbox">
+      <h2>🧾 ${esc(t('inboxTitle', { n: list.length }))}</h2>
+      <div class="rc-carousel">${list
+        .map(
+          (r) => `<figure class="rc-slide" data-id="${esc(r.id)}">
+            <img src="${esc(r.thumb || '')}" alt="" data-photo="${esc(r.photo)}">
+            <button type="button" class="rc-pick" data-pick="${esc(r.id)}"></button>
+            <button type="button" class="rc-del" data-del="${esc(r.id)}" aria-label="${esc(t('delete'))}">🗑</button>
+            <figcaption class="small muted"><span class="rc-num"></span> · ${esc(r.by || '')} · ${esc(timeFmt.format(new Date(r.createdAt)))}</figcaption>
+          </figure>`,
+        )
+        .join('')}</div>
+      <p class="small rc-status"></p>
+      <label class="field"><span>${esc(t('walletAmount'))}</span>
+        <input class="input money-input" name="amount" inputmode="decimal" autocomplete="off" placeholder="0"></label>
+      <div class="field"><span>${esc(t('walletPlace'))}</span><div class="segmented">${placeOptions(PLACES[0])}</div></div>
+      <div class="rc-items"></div>
+      <div class="row">
+        <label class="field"><span>${esc(t('walletDate'))}</span><input class="input" type="date" name="date" max="${hkToday()}"></label>
+        <label class="field grow"><span>${esc(t('dinnerNote'))}</span><input class="input" name="note" maxlength="200"></label>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn" id="rc-more">📷 ${esc(t('inboxMore'))}</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>${esc(t('cancel'))}</button>
+        <button class="btn primary">${esc(t('save'))}</button>
+      </div>
+    </form>`,
+    (dlg) => {
+      const form = $('#inbox-form', dlg);
+      const slides = () => [...dlg.querySelectorAll('.rc-slide')];
+      const chosen = () => slides().map((f) => list.find((r) => r.id === f.dataset.id)).filter((r) => r && picked.has(r.id));
+      let lead = null;
+
+      const refresh = () => {
+        const all = slides();
+        all.forEach((f, i) => {
+          const on = picked.has(f.dataset.id);
+          f.classList.toggle('picked', on);
+          $('.rc-num', f).textContent = `${i + 1}/${all.length}`;
+          const b = $('.rc-pick', f);
+          b.textContent = `${on ? '☑' : '☐'} ${t('inboxPick')}`;
+          b.setAttribute('aria-pressed', String(on));
+        });
+        $('.rc-status', dlg).textContent = picked.size ? t('inboxPicked', { n: picked.size }) : t('inboxPickFirst');
+        $('.rc-status', dlg).classList.toggle('late-txt', !picked.size);
+        // 第一張揀咗嘅單決定邊個買、邊日、買咗咩
+        const first = chosen()[0];
+        if (first && first.id !== lead) {
+          lead = first.id;
+          $('.rc-items', dlg).innerHTML = itemChecks(recentBought(first.by, first.createdAt));
+          if (!dateTouched) form.date.value = hkToday(new Date(first.createdAt));
+        }
+      };
+      refresh();
+
+      // 大相：捲到先載入
+      const io = new IntersectionObserver(
+        (seen) => {
+          for (const s of seen) {
+            if (!s.isIntersecting) continue;
+            io.unobserve(s.target);
+            const img = s.target;
+            store()
+              .getPhoto(fid(), img.dataset.photo)
+              .then((src) => src && (img.src = src))
+              .catch(() => {});
+          }
+        },
+        { root: $('.rc-carousel', dlg), rootMargin: '0px 100% 0px 100%' },
+      );
+      dlg.querySelectorAll('.rc-slide img').forEach((img) => io.observe(img));
+      dlg.addEventListener('close', () => io.disconnect(), { once: true });
+
+      form.date.oninput = () => (dateTouched = true);
+      $('.rc-carousel', dlg).onclick = (e) => {
+        const pick = e.target.closest('[data-pick]');
+        const del = e.target.closest('[data-del]');
+        if (pick) {
+          const id = pick.dataset.pick;
+          if (picked.has(id)) picked.delete(id);
+          else if (picked.size >= MAX_RECEIPTS) return toast(t('maxPhotos', { n: MAX_RECEIPTS }));
+          else picked.add(id);
+          refresh();
+        } else if (del) {
+          // 撳兩下先刪，唔使彈另一個視窗
+          if (!del.classList.contains('armed')) {
+            del.classList.add('armed');
+            del.textContent = t('inboxDeleteConfirm');
+            setTimeout(() => {
+              if (!del.isConnected) return;
+              del.classList.remove('armed');
+              del.textContent = '🗑';
+            }, 3000);
+            return;
+          }
+          const r = list.find((x) => x.id === del.dataset.del);
+          busy.add(r.id);
+          store().deleteInbox(fid(), r.id, r.photo).catch(fail);
+          picked.delete(r.id);
+          del.closest('.rc-slide').remove();
+          if (!slides().length) return dlg.close();
+          if (!picked.size) picked.add(slides()[0].dataset.id);
+          refresh();
+        } else if (e.target.tagName === 'IMG') {
+          zoom(e.target.src);
+        }
+      };
+      $('#rc-more', dlg).onclick = () => {
+        dlg.close();
+        snapReceipts();
+      };
+
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        const rs = chosen();
+        if (!rs.length) return toast(t('inboxPickFirst'));
+        const f = new FormData(form);
+        const amount = toCents(f.get('amount'));
+        if (!amount) {
+          form.amount.focus();
+          return toast(t('walletBadAmount'));
+        }
+        const entry = {
+          type: 'expense',
+          amount,
+          date: f.get('date') || hkToday(),
+          place: clean(f.get('place'), 30),
+          note: clean(f.get('note'), 200),
+          receipts: rs.map((r) => r.photo),
+          by: clean(rs[0].by || state().me, 20),
+          items: f.getAll('items').map((n) => clean(n, 60)).slice(0, 60),
+        };
+        rs.forEach((r) => busy.add(r.id));
+        store().saveInboxExpense(fid(), entry, rs.map((r) => r.id)).catch(fail);
+        const left = list.filter((r) => !busy.has(r.id)).length;
+        toast(left ? t('walletSaved', { amount: fmtMoney(amount) }) : t('inboxAllDone'));
+        if (left) openInbox();
+        else dlg.close();
+      };
+    },
+  );
+}
+
+// 放大睇張單（可以捲嚟睇清楚個總數）
+function zoom(src) {
+  const z = document.createElement('dialog');
+  z.className = 'rc-zoom';
+  z.innerHTML = `<img src="${esc(src)}" alt=""><button type="button" class="icon-btn rc-zoom-close" aria-label="${esc(t('close'))}">✕</button>`;
+  document.body.appendChild(z);
+  z.addEventListener('close', () => z.remove());
+  z.onclick = (e) => {
+    if (e.target.tagName === 'IMG') e.target.classList.toggle('full');
+    else z.close();
+  };
+  z.showModal();
 }
 
 // ---------- ➕ 入錢（先對數） ----------

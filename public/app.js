@@ -2,7 +2,7 @@ import { createStore } from './store.js';
 import { canInstall, openInstall, onInstallChange, isIOS } from './install.js';
 import { openDevices, deviceLabel, familyCode, parseFamilyCode } from './devices-view.js';
 import { watchForUpdates } from './update.js';
-import { initWallet, walletOnEnterFamily, renderWallet, openExpense } from './wallet-view.js';
+import { initWallet, walletOnEnterFamily, renderWallet, openExpense, snapReceipts } from './wallet-view.js';
 import { topFrequent, freqKey } from './freq.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
@@ -742,9 +742,16 @@ function stopShopping() {
       `<h2>🛒 ${esc(t('shopRecordPrompt', { n: bought }))}</h2>
       <div class="actions"><span class="spacer"></span>
         <button class="btn" data-close>${esc(t('later'))}</button>
-        <button class="btn primary" id="record-now">${esc(t('shopRecord'))}</button>
+        <button class="btn" id="record-now">${esc(t('shopRecord'))}</button>
+        <button class="btn primary" id="snap-now">📷 ${esc(t('inboxSnap'))}</button>
       </div>`,
-      (d) => ($('#record-now', d).onclick = () => openExpense()),
+      (d) => {
+        $('#record-now', d).onclick = () => openExpense();
+        $('#snap-now', d).onclick = () => {
+          d.close();
+          snapReceipts();
+        };
+      },
     );
   }
 }
