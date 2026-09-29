@@ -19,6 +19,7 @@ export {
   getDocs,
   writeBatch,
   serverTimestamp,
+  increment,
   documentId,
   connectFirestoreEmulator,
 } from 'firebase/firestore';

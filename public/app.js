@@ -2,7 +2,8 @@ import { createStore } from './store.js';
 import { canInstall, openInstall, onInstallChange, isIOS } from './install.js';
 import { openDevices, deviceLabel, familyCode, parseFamilyCode } from './devices-view.js';
 import { watchForUpdates } from './update.js';
-import { initWallet, walletOnEnterFamily, renderWallet } from './wallet-view.js';
+import { initWallet, walletOnEnterFamily, renderWallet, openExpense, snapReceipts } from './wallet-view.js';
+import { topFrequent, freqKey } from './freq.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
 import { compressImage, PHOTO_OPTS, THUMB_OPTS, MAX_PHOTOS } from './image.js';
@@ -30,6 +31,7 @@ const state = {
   items: [],
   listId: null,
   unsubs: [],
+  freq: [],
 };
 
 initLang(ls.get('fsl-lang'));
@@ -317,6 +319,7 @@ function resetFamily() {
   state.family = null;
   state.lists = [];
   state.items = [];
+  state.freq = [];
   setFamilyDictionary([]);
   ls.set('fsl-family', null);
 }
@@ -383,6 +386,14 @@ function enterFamily(fid) {
     }),
     ...dinnerOnEnterFamily(fid),
     ...walletOnEnterFamily(fid),
+    s.subscribeFreq(
+      fid,
+      (docs) => {
+        state.freq = docs;
+        render();
+      },
+      (err) => console.warn('freq', err),
+    ),
   ];
 }
 
@@ -434,6 +445,10 @@ function renderShell() {
     </nav>
     <div id="shop-view">
     <nav class="tabs" id="tabs" role="tablist" aria-label="${esc(t('lists'))}"></nav>
+    <div class="shop-tools">
+      <button type="button" class="btn shop-start" id="shop-start">${esc(t('shopStart'))}</button>
+    </div>
+    <div id="freq" class="freq-row"></div>
     <main id="list"></main>
     </div>
     <main id="dinner" class="hidden"></main>
@@ -462,6 +477,14 @@ function renderShell() {
   $('#photo-input').onchange = onAddPhoto;
   $('#add-name').addEventListener('focus', fillHistory, { once: true });
 
+  $('#shop-start').onclick = () => (shopping.on ? stopShopping() : startShopping());
+  renderShopBar();
+  $('#freq').onclick = (e) => {
+    if (e.target.closest('#freq-manage')) return openFreqManage();
+    const chip = e.target.closest('[data-freq]');
+    if (!chip || !state.listId) return;
+    if (addByName(chip.dataset.freq) !== 'dup') toast(t('freqAdded', { name: chip.textContent.replace(/^＋\s*/, '') }));
+  };
   $('#tabs').onclick = (e) => {
     const tab = e.target.closest('[data-list]');
     if (tab) selectList(tab.dataset.list);
@@ -515,6 +538,7 @@ function render() {
       .join('') + `<button class="tab add" id="add-list" aria-label="${esc(t('newList'))}">${esc(t('newListTab'))}</button>`;
 
   $('#add-form')?.classList.toggle('hidden', !state.listId);
+  renderFreq();
   const list0 = currentList();
   const addName = $('#add-name');
   if (addName) addName.placeholder = isWish(list0) ? t('wishPlaceholder') : t('addPlaceholder');
@@ -621,23 +645,148 @@ function onAdd(e) {
   }
   name = name.slice(0, 60);
 
+  addByName(name, { qty, link });
+  if (!link) addHistory(name);
+  fillHistory();
+  nameEl.value = '';
+  qtyEl.value = '';
+  nameEl.focus();
+}
+
+// ---------- ⭐ 常買 ----------
+
+const freqLabel = (d) => d.tr?.[getLang()] || lookup(d.name)?.[getLang()] || d.name;
+
+function renderFreq() {
+  const row = $('#freq');
+  if (!row) return;
+  const list = currentList();
+  const onList = new Set(
+    state.items
+      .filter((i) => i.listId === state.listId && !i.done)
+      .flatMap((i) => [i.name, ...Object.values(i.tr || {})].map((x) => String(x).trim().toLowerCase())),
+  );
+  const top = !list || isWish(list) ? [] : topFrequent(state.freq, { exclude: onList });
+  row.classList.toggle('hidden', !top.length);
+  row.innerHTML = top.length
+    ? `<span class="freq-label">${esc(t('freqTitle'))}</span>${top
+        .map((d) => `<button type="button" class="freq-chip" data-freq="${esc(d.name)}">＋ ${esc(freqLabel(d))}</button>`)
+        .join('')}<button type="button" class="freq-chip manage" id="freq-manage" aria-label="${esc(t('freqManage'))}">⚙️</button>`
+    : '';
+}
+
+function openFreqManage() {
+  const draw = (d) => {
+    const all = [...state.freq].sort((a, b) => (b.count || 0) - (a.count || 0));
+    $('.freq-list', d).innerHTML = all.length
+      ? all
+          .map(
+            (x) => `<li class="item"><div class="toggle"><span class="body"><span class="name">${esc(freqLabel(x))}</span>
+              <div class="meta">${esc(t('timesBought', { n: x.count || 0 }))}</div></span></div>
+              <button type="button" class="icon-btn" data-del-freq="${esc(x.id)}" aria-label="${esc(t('delete'))}">✕</button></li>`,
+          )
+          .join('')
+      : `<p class="muted">${esc(t('freqEmpty'))}</p>`;
+  };
+  openDialog(
+    `<h2>${esc(t('freqManage'))}</h2>
+    <p class="small muted">${esc(t('freqManageHint'))}</p>
+    <ul class="items freq-list"></ul>
+    <div class="actions"><span class="spacer"></span><button class="btn primary" data-close>${esc(t('close'))}</button></div>`,
+    (d) => {
+      draw(d);
+      $('.freq-list', d).onclick = (e) => {
+        const b = e.target.closest('[data-del-freq]');
+        if (!b) return;
+        state.store.deleteFreq(state.familyId, b.dataset.delFreq).catch(fail);
+        setTimeout(() => draw(d), 150);
+      };
+    },
+  );
+}
+
+// ---------- 🛒 買嘢模式：屏幕唔熄、大字大剔格，買完問要唔要記支出 ----------
+
+const shopping = { on: false, since: 0, lock: null };
+
+async function keepAwake() {
+  try {
+    if (shopping.on && 'wakeLock' in navigator && document.visibilityState === 'visible') {
+      shopping.lock = await navigator.wakeLock.request('screen');
+    }
+  } catch (err) {
+    console.warn('wake lock', err);
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (shopping.on && document.visibilityState === 'visible') keepAwake();
+});
+
+function startShopping() {
+  shopping.on = true;
+  shopping.since = Date.now();
+  document.body.classList.add('shopping-mode');
+  keepAwake();
+  renderShopBar();
+}
+
+function stopShopping() {
+  const bought = state.items.filter((i) => i.done && i.doneBy === state.me && (i.doneAt || 0) >= shopping.since).length;
+  shopping.on = false;
+  shopping.lock?.release().catch(() => {});
+  shopping.lock = null;
+  document.body.classList.remove('shopping-mode');
+  renderShopBar();
+  if (bought) {
+    openDialog(
+      `<h2>🛒 ${esc(t('shopRecordPrompt', { n: bought }))}</h2>
+      <div class="actions"><span class="spacer"></span>
+        <button class="btn" data-close>${esc(t('later'))}</button>
+        <button class="btn" id="record-now">${esc(t('shopRecord'))}</button>
+        <button class="btn primary" id="snap-now">📷 ${esc(t('inboxSnap'))}</button>
+      </div>`,
+      (d) => {
+        $('#record-now', d).onclick = () => openExpense();
+        $('#snap-now', d).onclick = () => {
+          d.close();
+          snapReceipts();
+        };
+      },
+    );
+  }
+}
+
+function renderShopBar() {
+  const btn = $('#shop-start');
+  if (!btn) return;
+  btn.textContent = shopping.on ? `${t('shopMode')} · ${t('shopDone')}` : t('shopStart');
+  btn.classList.toggle('primary', shopping.on);
+}
+
+// 加一樣嘢入目前清單（已經有未買 → 提示；之前買過 → 放返入未買）；回傳 'dup' | 'readded' | 'added'
+function addByName(name, { qty = '', link = '' } = {}) {
   const n = name.toLowerCase();
   const matches = (i) => i.name.toLowerCase() === n || Object.values(i.tr || {}).some((v) => String(v).toLowerCase() === n);
   const same = state.items.find((i) => i.listId === state.listId && matches(i));
   if (same && !same.done) {
     toast(t('alreadyOnList', { name }));
     if (qty && qty !== same.qty) state.store.updateItem(state.familyId, same.id, { qty }).catch(fail);
-  } else if (same) {
+    return 'dup';
+  }
+  const item = same || newItem(name, { qty, link });
+  if (same) {
     // 之前買過，放返入未買
     state.store.updateItem(state.familyId, same.id, { done: false, doneBy: null, qty: qty || same.qty, addedBy: state.me }).catch(fail);
   } else {
-    state.store.addItem(state.familyId, newItem(name, { qty, link })).catch(fail);
+    state.store.addItem(state.familyId, item).catch(fail);
   }
-  if (!link) addHistory(name);
-  fillHistory();
-  nameEl.value = '';
-  qtyEl.value = '';
-  nameEl.focus();
+  // ⭐ 常買：全家次數 +1（想買清單同連結唔計）
+  if (!link && !isWish(currentList())) {
+    state.store
+      .bumpFreq(state.familyId, freqKey(item.name), { name: item.name, category: item.category || 'other', lang: item.lang || 'zh', tr: item.tr || {} })
+      .catch((err) => console.warn('freq', err));
+  }
+  return same ? 'readded' : 'added';
 }
 
 function newItem(name, extra = {}) {

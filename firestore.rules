@@ -189,6 +189,34 @@ service cloud.firestore {
         && request.resource.data.get('receipts', []).size() <= 3;
     }
 
+    // 🧾 未入數嘅單：一次過影晒，之後先逐張入數（大相喺 photos，呢度得細圖）
+    match /families/{familyId}/inbox/{receiptId} {
+      allow read, delete: if canUse(familyId);
+      allow create: if canUse(familyId)
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['photo', 'thumb', 'by', 'createdAt'])
+        && shortString(request.resource.data.photo, 40)
+        && request.resource.data.photo.size() > 0
+        && shortString(request.resource.data.get('thumb', ''), 30000)
+        && shortString(request.resource.data.get('by', ''), 20);
+    }
+
+    // ⭐ 常買：全家加過幾多次（doc ID = 細楷名）
+    match /families/{familyId}/freq/{key} {
+      allow read, delete: if canUse(familyId);
+      allow create, update: if canUse(familyId)
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['name', 'category', 'lang', 'tr', 'count', 'lastAt'])
+        && shortString(request.resource.data.name, 60)
+        && request.resource.data.name.size() > 0
+        && shortString(request.resource.data.get('category', ''), 20)
+        && shortString(request.resource.data.get('lang', ''), 5)
+        && request.resource.data.get('tr', {}) is map
+        && request.resource.data.get('tr', {}).size() <= 3
+        && request.resource.data.count is int
+        && request.resource.data.count >= 0;
+    }
+
     // 通知：每部機一個 FCM token（由 GitHub Actions 讀取再發通知）
     match /families/{familyId}/push/{tokenId} {
       allow delete: if canUse(familyId);
