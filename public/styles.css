@@ -434,10 +434,38 @@ body.dinner-mode #app { padding-bottom: calc(2rem + env(safe-area-inset-bottom))
   border: 1px dashed var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; font-size: 0.9375rem;
 }
 .freq-chip.manage { border-style: solid; border-color: var(--line); background: var(--surface); padding: 0 0.625rem; }
-body.shopping-mode .item .toggle { padding-top: 1rem; padding-bottom: 1rem; }
-body.shopping-mode .item .check { width: 2.25rem; height: 2.25rem; font-size: 1.25rem; }
-body.shopping-mode .item .name { font-size: 1.25rem; }
-body.shopping-mode .freq-row { display: none; }
+.shop-title:empty { display: none; }
+
+/* 🛒 買嘢模式：收埋其他介面，淨係大大張卡顯示貨品 */
+body.shopping-mode .topbar,
+body.shopping-mode .views,
+body.shopping-mode #tabs,
+body.shopping-mode .freq-row,
+body.shopping-mode .addbar,
+body.shopping-mode .update-banner,
+body.shopping-mode .item .more,
+body.shopping-mode .item .link-out,
+body.shopping-mode #clear-done { display: none !important; }
+body.shopping-mode #app { padding-bottom: calc(2rem + env(safe-area-inset-bottom)); }
+body.shopping-mode .shop-tools {
+  position: sticky; top: 0; z-index: 5; margin: 0 -1rem 0.75rem; padding: 0.625rem 1rem;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+}
+body.shopping-mode .shop-title { display: grid; min-width: 0; }
+body.shopping-mode .shop-title b { font-size: 1.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.shopping-mode .shop-title span { font-size: 0.9375rem; color: var(--muted); font-weight: 600; }
+body.shopping-mode .shop-start { flex: none; min-height: 3.25rem; padding: 0 1.25rem; font-size: 1.125rem; }
+body.shopping-mode .group-title { font-size: 1rem; margin-top: 1.25rem; }
+body.shopping-mode .items { border-radius: 1.125rem; }
+body.shopping-mode .item .toggle { gap: 1rem; padding: 1.25rem 0.75rem 1.25rem 1rem; }
+body.shopping-mode .item .check { width: 2.75rem; height: 2.75rem; font-size: 1.5rem; border-width: 3px; }
+body.shopping-mode .item .name { font-size: 1.5rem; font-weight: 600; line-height: 1.25; }
+body.shopping-mode .item .qty { font-size: 1.125rem; padding: 0.125rem 0.625rem; vertical-align: 3px; }
+body.shopping-mode .item .original { font-size: 1.0625rem; }
+body.shopping-mode .item .meta { font-size: 1rem; }
+body.shopping-mode .item .thumb-btn { width: 4.5rem; height: 4.5rem; margin-right: 0.75rem; }
+body.shopping-mode .item .thumb { width: 100%; height: 100%; }
 
 /* ---------- 🧾 影單 / 未入數嘅單 ---------- */
 .wallet-actions { display: grid; grid-template-columns: 1fr 1fr; }
