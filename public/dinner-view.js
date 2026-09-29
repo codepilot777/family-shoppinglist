@@ -7,7 +7,9 @@ import { initMenu, subscribeRecipes, dishesLine, marketCardHtml, bindMenu } from
 
 let ctx; // { state, onChange }
 const d = {
-  members: [],
+  members: [], // 連埋 ✈️ roster（m.roster）
+  rawMembers: [],
+  rosters: {},
   dinners: {},
   today: hkToday(),
   unsubDinners: null,
@@ -31,6 +33,8 @@ const statusText = (home) => (home ? `✅ ${t('home')}` : `❌ ${t('away')}`);
 const appUrl = () => `${location.origin}${location.pathname}`;
 
 export const getMembers = () => d.members;
+export const getRosters = () => d.rosters;
+const mergeRosters = () => (d.members = d.rawMembers.map((m) => (d.rosters[m.id] ? { ...m, roster: d.rosters[m.id] } : m)));
 
 export function myMemberId() {
   const id = ls.get(`fsl-member-${fid()}`);
@@ -56,19 +60,32 @@ function subscribeDinners(familyId) {
 
 export function dinnerOnEnterFamily(familyId) {
   d.members = [];
+  d.rawMembers = [];
+  d.rosters = {};
   d.dinners = {};
   subscribeDinners(familyId);
+  const unsubRosters = store().subscribeRosters(
+    familyId,
+    (docs) => {
+      d.rosters = Object.fromEntries(docs.map((r) => [r.id, r]));
+      mergeRosters();
+      renderDinner();
+      document.dispatchEvent(new Event('fsl-data'));
+    },
+    (err) => console.warn('rosters', err),
+  );
   const unsubMembers = store().subscribeMembers(
     familyId,
     (members) => {
-      d.members = members;
+      d.rawMembers = members;
+      mergeRosters();
       renderDinner();
       refreshPushToken();
       document.dispatchEvent(new Event('fsl-members')); // 🧹 家務要顯示負責人
     },
     fail,
   );
-  return [unsubMembers, subscribeRecipes(familyId), () => d.unsubDinners?.()];
+  return [unsubMembers, unsubRosters, subscribeRecipes(familyId), () => d.unsubDinners?.()];
 }
 
 const daySummary = (date) => summarize(d.members, date, d.dinners[date], weekday(date));
@@ -172,6 +189,7 @@ function personChip(r) {
   return `<li class="person ${r.home ? '' : 'away'} ${r.late ? 'late' : ''}">
     <span>${r.home ? '✅' : '❌'} ${esc(m.name)}${r.guests ? ` <b>${esc(t('guestsN', { n: r.guests }))}</b>` : ''}</span>
     ${r.note ? `<span class="small muted">${esc(r.note)}</span>` : ''}
+    ${r.roster && !r.explicit ? `<span class="small muted">✈️ ${esc(r.member.roster?.showDest === false && r.roster !== 'SIM' ? t('rosterDuty') : r.roster)}</span>` : ''}
     ${lateTxt ? `<span class="small late-txt">⚠️ ${esc(lateTxt)}</span>` : ''}
   </li>`;
 }
@@ -374,14 +392,25 @@ export function openWeekForm(memberId) {
       $('#week-form', dlg).onsubmit = (e) => {
         e.preventDefault();
         const f = new FormData(e.target);
-        const entries = dates.map((date) =>
-          record(target, date, { home: f.get(`h-${date}`) === '1', guests: Number(f.get(`g-${date}`)) || 0, note: f.get(`n-${date}`) }),
-        );
-        store().setAttendance(fid(), entries).catch(fail);
+        // ✈️ roster 自動當唔返、又冇改過嘅日子唔寫紀錄（之後 roster 改咗會跟住變），亦唔會學入固定規律
+        const rosterAuto = new Set();
+        const entries = [];
+        for (const date of dates) {
+          const home = f.get(`h-${date}`) === '1';
+          const guests = Number(f.get(`g-${date}`)) || 0;
+          const note = clean(f.get(`n-${date}`), 60);
+          const cur = attendance(target, date, d.dinners[date], weekday(date));
+          if (cur.roster && !cur.explicit) {
+            rosterAuto.add(date);
+            if (!home && !guests && !note) continue;
+          }
+          entries.push(record(target, date, { home, guests, note }));
+        }
+        if (entries.length) store().setAttendance(fid(), entries).catch(fail);
         const patch = { lastConfirmedWeek: start };
         if (f.get('pattern')) {
           const pattern = [...(target.pattern || defaultPattern())];
-          for (const en of entries) pattern[weekday(en.date)] = en.rec.home;
+          for (const en of entries) if (!rosterAuto.has(en.date)) pattern[weekday(en.date)] = en.rec.home;
           patch.pattern = pattern;
         }
         store().updateMember(fid(), target.id, patch).catch(fail);

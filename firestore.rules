@@ -226,6 +226,26 @@ service cloud.firestore {
         && shortString(request.resource.data.get('by', ''), 20);
     }
 
+    // ✈️ 機師 roster（doc ID = 食飯成員 ID）：只有出門 / 返港時間同目的地機場，冇航班編號
+    match /families/{familyId}/rosters/{memberId} {
+      allow read, delete: if canUse(familyId);
+      allow create, update: if canUse(familyId)
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['trips', 'reserves', 'from', 'to', 'dinner', 'commute', 'showDest', 'by', 'updatedAt'])
+        && request.resource.data.trips is list
+        && request.resource.data.trips.size() <= 200
+        && request.resource.data.reserves is list
+        && request.resource.data.reserves.size() <= 200
+        && request.resource.data.get('dinner', '19:30').matches('^[0-9]{2}:[0-9]{2}$')
+        && request.resource.data.get('commute', 90) is int
+        && request.resource.data.get('commute', 90) >= 0
+        && request.resource.data.get('commute', 90) <= 300
+        && request.resource.data.get('showDest', true) is bool
+        && shortString(request.resource.data.get('from', ''), 10)
+        && shortString(request.resource.data.get('to', ''), 10)
+        && shortString(request.resource.data.get('by', ''), 20);
+    }
+
     // 📅 事項（一次性）：家長日、覆診、考試…；who = 相關嘅食飯成員 ID（可以留空），photo = 通告相 ID
     match /families/{familyId}/events/{eventId} {
       allow read, delete: if canUse(familyId);

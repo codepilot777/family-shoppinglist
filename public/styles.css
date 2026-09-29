@@ -597,3 +597,10 @@ dialog.sheet:not([open]) { display: none; }
 .cal-empty { text-align: center; padding: 1.25rem 0; }
 .cal-add { margin-top: 1rem; }
 .event-photo img { max-height: 40vh; }
+
+/* ✈️ roster */
+.cal-roster { margin-top: 0.5rem; }
+.roster-row .name { font-weight: 600; }
+.roster-preview { margin: 0 0 0.75rem; padding: 0.625rem 0.75rem 0.625rem 1.75rem; background: var(--surface-2); border-radius: 0.75rem; max-height: 30vh; overflow-y: auto; }
+.roster-preview li + li { margin-top: 0.25rem; }
+.roster-away { font-weight: 600; }

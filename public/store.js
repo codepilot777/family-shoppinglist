@@ -77,6 +77,7 @@ async function createFirebaseStore(firebaseConfig) {
   const inboxCol = (fid) => fb.collection(db, 'families', fid, 'inbox');
   const choresCol = (fid) => fb.collection(db, 'families', fid, 'chores');
   const eventsCol = (fid) => fb.collection(db, 'families', fid, 'events');
+  const rostersCol = (fid) => fb.collection(db, 'families', fid, 'rosters');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -275,6 +276,23 @@ async function createFirebaseStore(firebaseConfig) {
 
     setChoreTranslation(fid, id, lang, text, auto) {
       return fb.updateDoc(fb.doc(choresCol(fid), id), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
+    },
+
+    // ---------- ✈️ roster（doc ID = 食飯成員 ID）----------
+    subscribeRosters(fid, cb, onError) {
+      return fb.onSnapshot(rostersCol(fid), (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }))), onError);
+    },
+
+    setRoster(fid, memberId, data) {
+      return fb.setDoc(fb.doc(rostersCol(fid), memberId), { ...data, updatedAt: fb.serverTimestamp() });
+    },
+
+    updateRoster(fid, memberId, patch) {
+      return fb.updateDoc(fb.doc(rostersCol(fid), memberId), patch);
+    },
+
+    deleteRoster(fid, memberId) {
+      return fb.deleteDoc(fb.doc(rostersCol(fid), memberId));
     },
 
     // ---------- 📅 事項 ----------
@@ -685,6 +703,28 @@ function createLocalStore() {
       if (!c) return;
       c.tr = { ...c.tr, [lang]: text };
       c.trAuto = { ...c.trAuto, [lang]: auto };
+      save();
+    },
+
+    subscribeRosters(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.rosters || {}).map(([id, r]) => ({ ...r, id }))));
+    },
+
+    async setRoster(fid, memberId, data) {
+      const f = fam(fid);
+      f.rosters = { ...f.rosters, [memberId]: { ...data, updatedAt: Date.now() } };
+      save();
+    },
+
+    async updateRoster(fid, memberId, patch) {
+      const r = fam(fid).rosters?.[memberId];
+      if (!r) return;
+      Object.assign(r, patch);
+      save();
+    },
+
+    async deleteRoster(fid, memberId) {
+      delete fam(fid).rosters?.[memberId];
       save();
     },
 

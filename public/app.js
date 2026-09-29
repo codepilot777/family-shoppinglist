@@ -5,6 +5,7 @@ import { watchForUpdates } from './update.js';
 import { initWallet, walletOnEnterFamily, renderWallet, openExpense, snapReceipts } from './wallet-view.js';
 import { initChores, choresOnEnterFamily, renderChores } from './chores-view.js';
 import { initCalendar, calendarOnEnterFamily, openCalendar } from './calendar-view.js';
+import { initRoster } from './roster-view.js';
 import { topFrequent, freqKey } from './freq.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
@@ -104,6 +105,7 @@ async function boot() {
   initDinner({ state });
   initWallet({ state });
   initChores({ state });
+  initRoster({ state });
   initCalendar({ state, visibleViews: () => visibleViews(), go: (view) => showView(view) });
 
   try {
