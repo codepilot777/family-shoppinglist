@@ -48,6 +48,7 @@ function subscribeDinners(familyId) {
     (docs) => {
       d.dinners = docs;
       renderDinner();
+      document.dispatchEvent(new Event('fsl-data')); // 📅 日曆
     },
     fail,
   );
@@ -71,6 +72,8 @@ export function dinnerOnEnterFamily(familyId) {
 }
 
 const daySummary = (date) => summarize(d.members, date, d.dinners[date], weekday(date));
+// 📅 日曆用：有成員先計（冇就 null）
+export const dinnerSummary = (date) => (d.members.length ? daySummary(date) : null);
 
 // ---------- 畫面 ----------
 

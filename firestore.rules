@@ -226,6 +226,25 @@ service cloud.firestore {
         && shortString(request.resource.data.get('by', ''), 20);
     }
 
+    // 📅 事項（一次性）：家長日、覆診、考試…；who = 相關嘅食飯成員 ID（可以留空），photo = 通告相 ID
+    match /families/{familyId}/events/{eventId} {
+      allow read, delete: if canUse(familyId);
+      allow create, update: if canUse(familyId)
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['title', 'lang', 'tr', 'trAuto', 'date', 'time', 'who', 'note', 'photo', 'by', 'createdAt'])
+        && shortString(request.resource.data.title, 60)
+        && request.resource.data.title.size() > 0
+        && request.resource.data.get('tr', {}) is map
+        && request.resource.data.get('tr', {}).size() <= 3
+        && request.resource.data.get('trAuto', {}) is map
+        && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.get('time', '').matches('^([0-9]{2}:[0-9]{2})?$')
+        && shortString(request.resource.data.get('who', ''), 40)
+        && shortString(request.resource.data.get('note', ''), 200)
+        && shortString(request.resource.data.get('photo', ''), 40)
+        && shortString(request.resource.data.get('by', ''), 20);
+    }
+
     // ⭐ 常買：全家加過幾多次（doc ID = 細楷名）
     match /families/{familyId}/freq/{key} {
       allow read, delete: if canUse(familyId);

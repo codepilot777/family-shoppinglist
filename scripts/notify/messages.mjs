@@ -25,6 +25,8 @@ const TEXT = {
     walletTitle: '💰 買餸錢包得返 {amount}',
     walletBody: '低過 {limit}，記得入錢。',
     choresTitle: '🧹 今日家務（{n} 樣）',
+    eventsTitle: '📅 今日：{what}',
+    allDay: '全日',
     late: '（遲咗）',
     sep: '、',
   },
@@ -45,6 +47,8 @@ const TEXT = {
     walletTitle: '💰 Grocery wallet has {amount} left',
     walletBody: 'Below {limit} — remember to top up.',
     choresTitle: '🧹 Chores today ({n})',
+    eventsTitle: '📅 Today: {what}',
+    allDay: 'all day',
     late: ' (late)',
     sep: ', ',
   },
@@ -65,6 +69,8 @@ const TEXT = {
     walletTitle: '💰 Uang belanja tinggal {amount}',
     walletBody: 'Di bawah {limit} — jangan lupa diisi.',
     choresTitle: '🧹 Tugas hari ini ({n})',
+    eventsTitle: '📅 Hari ini: {what}',
+    allDay: 'seharian',
     late: ' (terlambat)',
     sep: ', ',
   },
@@ -90,9 +96,10 @@ function summaryBody(tx, sum) {
  * @param recipes 菜式庫（計今日買餸要幾多樣材料）
  * @param wallet { balance, low }（仙；冇紀錄就 null）
  * @param chores 家務 [{ name, tr, due, who }]（朝早通知負責人今日要做嘅）
+ * @param events 📅 事項 [{ title, tr, date, time, who, note }]（朝早通知相關嘅人今日有咩）
  * @returns [{ key, token, data: { title, body, url, tag, actions } }]
  */
-export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [], wallet = null, chores = [] }) {
+export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [], wallet = null, chores = [], events = [] }) {
   const out = [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const tonight = summarize(members, today, dinners[today], weekday(today));
@@ -102,6 +109,7 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
   const win = marketDays.length ? marketWindow(today, marketDays) : null;
   const toBuy = win?.isMarketDay ? collectIngredients(win.dates, dinners, recipes).filter((x) => !x.staple).length : 0;
   const choresDue = mode === 'daily' ? dueToday(chores, today) : [];
+  const eventsToday = mode === 'daily' ? events.filter((e) => e.date === today).sort((a, b) => (a.time || '').localeCompare(b.time || '')) : [];
 
   for (const dev of devices) {
     const m = byId.get(dev.memberId);
@@ -125,6 +133,24 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
           title: fill(tx.choresTitle, { n: mine.length }),
           body: mine.map((c) => name(c) + (c.due < today ? tx.late : '')).join(tx.sep),
           url: url('view=chores'),
+        },
+      });
+    }
+
+    // 📅 今日同佢有關嘅事項（家長日、覆診…）；揀「任何人」嘅唔發
+    const myEvents = eventsToday.filter((e) => e.who === m.id);
+    if (myEvents.length) {
+      const title = (e) => e.tr?.[lang] || DICT_INDEX.get(String(e.title).trim().toLowerCase())?.[lang] || e.title;
+      const line = (e) => `${e.time || tx.allDay} ${title(e)}`;
+      out.push({
+        key: dev.key,
+        token: dev.token,
+        data: {
+          tag: 'events',
+          actions: '[]',
+          title: fill(tx.eventsTitle, { what: line(myEvents[0]) }),
+          body: myEvents.map((e) => line(e) + (e.note ? ` · ${e.note}` : '')).join('\n'),
+          url: url(`cal=${today}`),
         },
       });
     }

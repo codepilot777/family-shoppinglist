@@ -1,8 +1,8 @@
 // 🧹 家務頁：過咗期 / 今日 / 未來 7 日 / 之後，撳 ○ 就「做咗」並自動排下一次。
 import { t, getLang, langInfo } from './i18n.js';
 import { $, esc, ls, clean, toast, fail, openDialog, confirmDialog } from './ui.js';
-import { hkToday, formatDay } from './dates.js';
-import { nextDue, status, validRule, CHORE_PRESETS, UNITS } from './chores.js';
+import { hkToday, formatDay, addDays } from './dates.js';
+import { nextDue, nextAfter, status, validRule, CHORE_PRESETS, UNITS } from './chores.js';
 import { prepareItem, lookup, translateTo } from './translate.js';
 import { getMembers, myMemberId } from './dinner-view.js';
 
@@ -57,10 +57,24 @@ export function choresOnEnterFamily(familyId) {
       (list) => {
         chores = list;
         renderChores();
+        document.dispatchEvent(new Event('fsl-data')); // 📅 日曆
       },
       fail,
     ),
   ];
+}
+
+// 📅 日曆用：某日到期嘅家務（今日連埋過咗期嘅；將來就計排期）
+export function choresOn(date, today = hkToday()) {
+  return chores
+    .filter((c) => {
+      if (!c.due) return false;
+      if (date === today) return c.due <= today;
+      if (date < today) return c.lastDone === date;
+      if (date === c.due) return true;
+      return date > c.due && nextAfter(c.start || c.due, c.every, c.unit, addDays(date, -1)) === date;
+    })
+    .map((c) => ({ ...c, label: choreName(c).text, whoName: memberName(c.who) }));
 }
 
 // ---------- 畫面 ----------
