@@ -1,10 +1,11 @@
 // 將屋企通嘅資料匯出去 NAS（或者任何一部電腦）：
 //   <OUT_DIR>/<家庭名>-<ID 尾 4 位>/
 //     wallet-all.csv            全部家用紀錄（Excel 開得）
+//     calendar.csv              日曆：事項（連重複）、出勤、放假（Excel 開得）
 //     wallet/2026-09.csv        每月一個檔
 //     receipts/2026-09-28_街市_218.00_1.jpg   單據相（已經有就唔再下載）
 //     photos/<id>.jpg           其他相（貨品相）
-//     backup/<collection>.json  所有資料嘅完整備份（清單、貨品、食飯、菜式…）
+//     backup/<collection>.json  所有資料嘅完整備份（清單、貨品、食飯、菜式、家務、事項、roster、常買、未入數嘅單…）
 //     last-export.txt
 //
 // 環境變數：
@@ -18,6 +19,7 @@ import { join } from 'node:path';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { toCSV, byNewest } from '../../public/wallet.js';
+import { repeatLabel } from '../../public/events.js';
 
 const { FIREBASE_SERVICE_ACCOUNT, FIREBASE_SERVICE_ACCOUNT_FILE, OUT_DIR = './home-hub-export', FAMILY_ID, FIRESTORE_EMULATOR_HOST, GCLOUD_PROJECT } =
   process.env;
@@ -35,7 +37,7 @@ if (FIRESTORE_EMULATOR_HOST) {
 const db = getFirestore();
 
 // 備份嘅 collection（push token 同邀請代碼唔匯出）
-const COLLECTIONS = ['lists', 'items', 'members', 'dinners', 'recipes', 'dict', 'wallet', 'devices'];
+const COLLECTIONS = ['lists', 'items', 'members', 'dinners', 'recipes', 'dict', 'wallet', 'devices', 'freq', 'chores', 'events', 'rosters', 'inbox'];
 
 const safe = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40) || '_';
 const exists = (p) => access(p).then(() => true, () => false);
@@ -47,6 +49,29 @@ function plain(v) {
   if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
   return v;
 }
+// 📅 日曆 CSV：事項（重複嘅寫一行，註明逢星期幾）、roster 出勤 / reserve / 放假
+const csvCell = (v) => (/[",\r\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''));
+function calendarCSV(events, rosters, members) {
+  const name = (id) => members.find((m) => m.id === id)?.name || '';
+  const days = ['日', '一', '二', '三', '四', '五', '六'];
+  const rows = [];
+  for (const e of events) {
+    const exc = Object.values(e.exc || {});
+    rows.push({
+      kind: 'event', date: e.date, time: e.time || '', end: e.until || '', repeat: repeatLabel(e.repeat, days),
+      title: e.title, who: name(e.who), note: [e.note, exc.length ? `${exc.filter((x) => x.skip).length} 日取消 / ${exc.filter((x) => !x.skip).length} 日改咗` : ''].filter(Boolean).join(' · '),
+    });
+  }
+  for (const r of rosters) {
+    for (const t of r.trips || []) rows.push({ kind: t.k === 'sim' ? 'sim' : 'duty', date: t.s.slice(0, 10), time: t.s.slice(11), end: t.e ? t.e.replace('T', ' ') : '', title: t.d || '', who: name(r.id) });
+    for (const x of r.reserves || []) rows.push({ kind: 'reserve', date: x.s.slice(0, 10), time: x.s.slice(11), end: x.e.replace('T', ' '), title: x.c || '', who: name(r.id) });
+    for (const d of r.off || []) rows.push({ kind: 'off', date: d, who: name(r.id) });
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
+  const cols = ['date', 'time', 'end', 'kind', 'repeat', 'title', 'who', 'note'];
+  return '\ufeff' + [cols.join(','), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(','))].join('\r\n') + '\r\n';
+}
+
 const millis = (v) => (v instanceof Timestamp ? v.toMillis() : v ?? 0);
 
 async function savePhoto(famRef, id, path) {
@@ -84,6 +109,8 @@ for (const famRef of families) {
   }
   const { joinCode, ...famInfo } = plain(fam);
   await writeFile(join(dir, 'backup', 'family.json'), JSON.stringify({ id: famRef.id, ...famInfo }, null, 2));
+
+  await writeFile(join(dir, 'calendar.csv'), calendarCSV(data.events, data.rosters, data.members));
 
   // 家用 CSV
   const walletSnap = await famRef.collection('wallet').get();

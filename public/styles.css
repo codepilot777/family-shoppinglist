@@ -610,3 +610,8 @@ dialog.sheet:not([open]) { display: none; }
 .roster-preview { margin: 0 0 0.75rem; padding: 0.625rem 0.75rem 0.625rem 1.75rem; background: var(--surface-2); border-radius: 0.75rem; max-height: 30vh; overflow-y: auto; }
 .roster-preview li + li { margin-top: 0.25rem; }
 .roster-away { font-weight: 600; }
+
+/* 🔁 重複事項 */
+.repeat-days { margin-bottom: 0.25rem; }
+.until-field { margin-top: 0.5rem; }
+.occ-actions { display: grid; gap: 0.5rem; margin-bottom: 0.5rem; }

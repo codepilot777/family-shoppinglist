@@ -18,7 +18,7 @@
 - **🎁 想買清單**：旅行、網購、「見到就幫我買」嘅嘢，有相、價錢、連結，按「幫邊個買」分組
 - **🍚 食飯**：今晚幾多人喺屋企食飯；星期日問卷、每朝確認（唔覆當冇改）、4pm 截數，自動通知 + WhatsApp 後備
 - **💰 家用**：買餸錢包餘額、📷 一次過影晒單再逐張入數、入錢前對數、每月總結，每日自動匯出去 NAS
-- **🧹 家務**：定期家務（每 N 日／星期／月），撳一下「做咗」自動排下一次；負責人朝早 8 點收通知
+- **🧹 家務**：定期家務（每 N 日／星期／月），撳一下「做咗」自動排下一次
 - **📅 日曆**：頂部 📅 一個星期／一個月睇晒：食飯人數同菜式、買餸日、家務，同埋自己加嘅事項（家長日、覆診，可以影低通告）；當日朝早通知相關嘅人
 - **✈️ 機師 roster**：匯入國泰 roster 匯出嘅 .ics，日曆顯示幾時出門、幾時返港；出勤嗰晚食飯自動當唔返（只存時間同目的地，唔存航班編號）
 - **🍽 菜單 + 🧺 買餸**：預先揀每晚菜式；到咗買餸日自動計出要買咩（附建議份量同人數），一撳加入購物清單
@@ -128,6 +128,8 @@ export const firebaseConfig = {
 
 ### 開通知（一次性，大約 10 分鐘）
 
+> 通知只會發食飯相關嘅嘢（星期日問卷、朝早今晚確認 / 煮飯人數、4pm 截數）。家務、日曆事項、錢包全部喺 app 入面睇，唔會發通知。
+
 通知由 GitHub Actions 定時經 Firebase Cloud Messaging 發出，**唔使升級 Firebase 付費方案**。
 
 1. **Web Push key**：Firebase Console → ⚙️ 專案設定 → **Cloud Messaging** → 最底「Web Push 憑證」→ **Generate key pair**，複製嗰條 key，喺 `public/firebase-config.js` 入面加一行：
@@ -161,7 +163,7 @@ export const firebaseConfig = {
 - **常見家務**：換床單、洗廁所、抹窗、洗冷氣隔塵網…未有幾多家務嘅時候喺頁底顯示，一撳就加（負責人同上）。
 - 撳任何一樣可以改、**跳過今次**或者刪除。「我嘅」只顯示輪到自己嘅（要喺食飯頁揀咗「我係邊個」）。
 - 家務名同貨品一樣會翻譯：媽媽打「換床單」，姐姐見到「Ganti seprai」。
-- **通知**：每朝 8 點（同食飯確認一齊），負責人會收到「🧹 今日家務」：今日到期同過咗期嘅，過咗期會標「遲咗」。揀「任何人」嘅唔發通知。GitHub 定時工作會遲幾分鐘，所以唔適合要準時嘅提醒。
+- 冇通知：打開 app 睇「我嘅」就得（通知只保留食飯）。
 
 > 要將最新 `firestore.rules` 再貼去 Firebase Console 發布，否則家務存唔到。
 
@@ -177,7 +179,8 @@ export const firebaseConfig = {
 - 點嘅顏色：🔴 有人放假（例如姐姐）、🟡 買餸日、🟢 其他安排（事項、出勤、家務）。
 - 只顯示呢部機有開嘅分頁嘅資料：例如淨係開咗「食飯」嘅機，日曆唔會見到家務。
 - **➕ 加事項**（一次性）：咩事、日期、時間（可以唔填 = 全日）、關於邊個、備註、通告相。例如「阿女家長日 19:00」、「婆婆覆診」。事項名會自動翻譯俾姐姐睇。
-- **通知**：揀咗「關於邊個」嘅話，佢當日朝早 8 點會收到「📅 今日：19:00 家長日」，撳通知會打開日曆嗰日。揀「任何人」唔發。
+- **🔁 每星期重複**：加事項嗰陣剔星期幾（例如一至五 15:30「接阿仔」、逢三 17:00「游水」），可以設「重複到」邊日。
+  - 撳日曆入面某一日嘅重複事項：**只改呢日**（改時間 / 邊個 / 備註，例如「今日媽媽接」）、**改全部**、或者**取消呢日**（例如假期）。
 
 > 要將最新 `firestore.rules` 再貼去 Firebase Console 發布，否則事項存唔到。
 
@@ -228,13 +231,14 @@ export const firebaseConfig = {
 - **➕ 入錢**：入錢之前先**數一數錢包實際有幾多**。同紀錄唔一樣，就會記低「對數差額」同原因，之後再入新嘅錢。
 - **每月總結**：用咗幾多、買咗幾多次、入咗幾多、按地方分；撳 ‹ › 睇其他月份。撳任何一筆可以睇單據、改或者刪除。
 - **📤 匯出 CSV**：Excel 開得。
-- **⚙️ 低餘額提醒**：錢包低過設定嘅數（預設 $200），朝早 8 點會通知食飯成員入錢（要開咗通知）。
+- **⚙️ 低餘額提醒**：錢包低過設定嘅數（預設 $200），家用頁會顯示紅色提醒（唔會發通知）。
 
 ### 自動匯出去 NAS
 
 NAS 每日自己去 Firebase 攞資料，存喺 NAS 入面：
 ```
 home-hub/我哋屋企-ab12/
+  calendar.csv                   日曆：事項（連重複）、出勤、放假
   wallet-all.csv                 全部家用紀錄
   wallet/2026-09.csv             每月一個檔
   receipts/2026-09-28_街市_218.50_1.jpg
@@ -285,6 +289,24 @@ home-hub/我哋屋企-ab12/
 
 每次發佈新版本，app 頂部會出現「🔄 有新版本 · 更新」，撳一下就換成新版本，唔使再「重新整理兩次」。版本號由 GitHub Actions 發佈時自動用 commit 編號，唔使人手改。
 
+## 🧪 自動測試
+
+每個 PR 同 main 有改動，GitHub Actions（**Tests**）都會自動跑一次，全部用 Firebase emulator，唔會掂真資料：
+
+- **單元測試**（`scripts/notify/*.test.mjs`）：食飯人數、通知內容、家務排期、事項重複、roster、Excel、家用計數…
+- **Firestore 規則**（`tests/rules.test.mjs`）：未登記 / 被移除嘅機讀寫唔到、每種資料嘅格式檢查
+- **NAS 匯出**（`tests/export.test.mjs`）：備份齊晒、`calendar.csv` 內容、唔會匯出邀請代碼
+- **瀏覽器**（`tests/e2e/*.test.mjs`，Playwright）：多部「電話」一齊用（中文 + 印尼文），試購物、家用、影單、roster / 放假、家務、日曆重複事項、菜式合併。測試用嘅 roster / Excel 係跟今日日子自動砌，唔會過期
+
+自己部電腦跑（要 Node 22 同 Java）：
+
+```sh
+cd tests
+npm ci && npx playwright install chromium
+npm ci --omit=dev --prefix ../scripts/export
+npm test
+```
+
 ## 本機試用 / 開發
 
 唔填 Firebase config 都可以即刻試（**示範模式**，資料只存喺本機，唔會同步）：
@@ -326,6 +348,7 @@ public/
   chores-view.js        🧹 家務頁
   chores.js             家務排期（app 同通知 script 共用）
   calendar-view.js      📅 日曆、事項
+  events.js             事項重複計算（app 同 NAS 匯出共用）
   roster-view.js        ✈️ 匯入 roster、日曆顯示
   roster.js             讀 roster .ics、放假日、計幾時唔喺屋企（app 同通知 script 共用）
   xlsx-lite.js          讀 Excel（.xlsx）（唔使額外 library）
@@ -336,6 +359,8 @@ public/
   sw.js                 離線快取
   vendor/firebase.js    Firebase SDK
 firestore.rules         Firestore 安全規則
+firebase.json           Firebase 設定（emulator、`firebase deploy --only firestore:rules`）
+tests/                  自動測試（規則、NAS 匯出、瀏覽器）
 scripts/notify/         食飯通知 script（GitHub Actions 定時執行）
 scripts/export/         匯出去 NAS（家用 CSV、單據相、完整備份）
 .github/workflows/      自動發佈到 GitHub Pages、定時發通知
