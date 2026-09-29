@@ -179,6 +179,8 @@ export const firebaseConfig = {
 - 點嘅顏色：🔴 有人放假（例如姐姐）、🟡 買餸日、🟢 其他安排（事項、出勤、家務）。
 - 只顯示呢部機有開嘅分頁嘅資料：例如淨係開咗「食飯」嘅機，日曆唔會見到家務。
 - **➕ 加事項**（一次性）：咩事、日期、時間（可以唔填 = 全日）、關於邊個、備註、通告相。例如「阿女家長日 19:00」、「婆婆覆診」。事項名會自動翻譯俾姐姐睇。
+- **🔁 每星期重複**：加事項嗰陣剔星期幾（例如一至五 15:30「接阿仔」、逢三 17:00「游水」），可以設「重複到」邊日。
+  - 撳日曆入面某一日嘅重複事項：**只改呢日**（改時間 / 邊個 / 備註，例如「今日媽媽接」）、**改全部**、或者**取消呢日**（例如假期）。
 
 > 要將最新 `firestore.rules` 再貼去 Firebase Console 發布，否則事項存唔到。
 
@@ -236,6 +238,7 @@ export const firebaseConfig = {
 NAS 每日自己去 Firebase 攞資料，存喺 NAS 入面：
 ```
 home-hub/我哋屋企-ab12/
+  calendar.csv                   日曆：事項（連重複）、出勤、放假
   wallet-all.csv                 全部家用紀錄
   wallet/2026-09.csv             每月一個檔
   receipts/2026-09-28_街市_218.50_1.jpg
@@ -327,6 +330,7 @@ public/
   chores-view.js        🧹 家務頁
   chores.js             家務排期（app 同通知 script 共用）
   calendar-view.js      📅 日曆、事項
+  events.js             事項重複計算（app 同 NAS 匯出共用）
   roster-view.js        ✈️ 匯入 roster、日曆顯示
   roster.js             讀 roster .ics、放假日、計幾時唔喺屋企（app 同通知 script 共用）
   xlsx-lite.js          讀 Excel（.xlsx）（唔使額外 library）

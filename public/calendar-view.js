@@ -10,6 +10,7 @@ import { getMembers, dinnerSummary } from './dinner-view.js';
 import { dishesLine } from './menu-view.js';
 import { choresOn } from './chores-view.js';
 import { rosterRows, rosterCount, anyOff, pickRosterFile, openRosterSettings } from './roster-view.js';
+import { eventsOnDate, isRepeating, onDate, repeatLabel, pruneExc } from './events.js';
 
 const PHOTO_OPTS = { maxSide: 1600, maxChars: 700_000, quality: 0.85 };
 
@@ -70,7 +71,18 @@ export function calendarOnEnterFamily(familyId) {
 
 // ---------- 某日有咩 ----------
 
-const eventsOn = (date) => events.filter((e) => e.date === date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+const eventsOn = (date) => eventsOnDate(events, date);
+// 星期日至六嘅短名（中文用「日一二…」，其他語言用 Sun / Min…）
+const dayLabels = () => {
+  const style = getLang() === 'zh' ? 'narrow' : 'short';
+  return Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(locale(), { weekday: style, timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 0, 4 + i))));
+};
+const repeatText = (e) =>
+  isRepeating(e)
+    ? `🔁 ${repeatLabel(e.repeat, dayLabels(), { everyDay: t('repeatEveryDay'), weekdays: t('repeatWeekdays'), sep: getLang() === 'zh' ? '' : ' ' })}${
+        e.until ? ` · ${t('repeatUntilShort', { day: formatDay(e.until, locale()) })}` : ''
+      }`
+    : '';
 
 function marks(date, today) {
   let n = eventsOn(date).length + rosterCount(date);
@@ -83,10 +95,10 @@ function agendaHtml(date, today) {
   const rows = rosterRows(date); // ✈️ 邊個出勤 / 返港
   for (const e of eventsOn(date)) {
     const who = memberName(e.who);
-    rows.push(`<li class="item cal-row"><button class="toggle" data-ev="${esc(e.id)}">
+    rows.push(`<li class="item cal-row"><button class="toggle" data-ev="${esc(e.id)}" data-occ="${esc(date)}">
       <span class="cal-time">${esc(e.time || t('calAllDay'))}</span>
       <span class="body"><span class="name">📌 ${esc(eventTitle(e))}</span>${e.photo ? ' <span class="small">📷</span>' : ''}
-        <div class="meta">${esc([who && `👤 ${who}`, e.note].filter(Boolean).join(' · '))}</div></span>
+        <div class="meta">${esc([who && `👤 ${who}`, e.note, repeatText(e), e.changed && `✏️ ${t('occChanged')}`].filter(Boolean).join(' · '))}</div></span>
       <span class="more" aria-hidden="true">›</span></button></li>`);
   }
   if (shows('dinner') && date >= addDays(today, -1)) {
@@ -237,7 +249,10 @@ function onClick(e) {
     sheet.close();
     return ctx.go(b.dataset.go);
   }
-  if (b.dataset.ev) return openEvent(events.find((x) => x.id === b.dataset.ev));
+  if (b.dataset.ev) {
+    const ev = events.find((x) => x.id === b.dataset.ev);
+    return ev && isRepeating(ev) ? openOccurrence(ev, b.dataset.occ) : openEvent(ev);
+  }
   if (b.hasAttribute('data-add-event')) return openEvent(null, cal.sel);
   if (b.hasAttribute('data-import-roster')) return pickRosterFile();
   if (b.dataset.roster) return openRosterSettings(b.dataset.roster);
@@ -265,6 +280,12 @@ function openEvent(ev, date) {
           .map(([id, n]) => `<label><input type="radio" name="who" value="${esc(id)}" ${id === (ev?.who || '') ? 'checked' : ''}><span>${esc(n)}</span></label>`)
           .join('')}</div>
         <p class="small muted">${esc(t('eventWhoHint'))}</p></div>
+      <div class="field"><span>🔁 ${esc(t('eventRepeat'))}</span>
+        <div class="cats repeat-days">${[1, 2, 3, 4, 5, 6, 0]
+          .map((d) => `<label><input type="checkbox" name="repeat" value="${d}" ${ev?.repeat?.includes(d) ? 'checked' : ''}><span>${esc(dayLabels()[d])}</span></label>`)
+          .join('')}</div>
+        <label class="field until-field ${isRepeating(ev) ? '' : 'hidden'}"><span>${esc(t('eventUntil'))}</span><input class="input" type="date" name="until" value="${esc(ev?.until || '')}"></label>
+      </div>
       <label class="field"><span>${esc(t('dinnerNote'))}</span><input class="input" name="note" maxlength="200" value="${esc(ev?.note || '')}"></label>
       <div class="field"><span>🧾 ${esc(t('eventPhoto'))}</span>
         <div class="event-photo"></div>
@@ -323,12 +344,16 @@ function openEvent(ev, date) {
         }
       };
       if (!editing) setTimeout(() => form.title.focus(), 50);
+      form.querySelectorAll('input[name="repeat"]').forEach(
+        (c) => (c.onchange = () => $('.until-field', dlg).classList.toggle('hidden', !form.querySelector('input[name="repeat"]:checked'))),
+      );
       $('#event-del', dlg)?.addEventListener('click', () =>
         confirmDialog(t('choreDeleteConfirm', { name: eventTitle(ev) }), t('delete'), () => {
           store().deleteEvent(fid(), ev.id).catch(fail);
           if (ev.photo) store().deletePhotos(fid(), [ev.photo]).catch(() => {});
         }),
       );
+      if (isRepeating(ev)) $('#event-del', dlg).textContent = t('deleteAllRepeats');
       form.onsubmit = (e) => {
         e.preventDefault();
         const f = new FormData(form);
@@ -340,7 +365,11 @@ function openEvent(ev, date) {
           who: clean(f.get('who'), 40),
           note: clean(f.get('note'), 200),
           photo,
+          repeat: [...new Set(f.getAll('repeat').map(Number))].filter((d) => d >= 0 && d <= 6).sort(),
+          until: '',
         };
+        if (data.repeat.length && /^\d{4}-\d{2}-\d{2}$/.test(f.get('until') || '') && f.get('until') >= data.date) data.until = f.get('until');
+        if (editing && isRepeating(ev)) data.exc = pruneExc(ev.exc, addDays(hkToday(), -60));
         if (!editing) {
           const { lang, tr } = prepareItem(typed, getLang());
           store().addEvent(fid(), { title: typed, lang, tr, trAuto: {}, ...data, by: clean(state().me, 20) }).catch(fail);
@@ -359,6 +388,77 @@ function openEvent(ev, date) {
         dlg.close();
         toast(t('saved'));
         renderCalendar();
+      };
+    },
+  );
+}
+
+// 🔁 重複事項：撳某一日 → 只改呢日 / 改全部 / 取消呢日
+function openOccurrence(ev, date) {
+  const occ = onDate(ev, date);
+  openDialog(
+    `<h2>📌 ${esc(eventTitle(ev))}</h2>
+    <p class="small muted">${esc(formatDay(date, locale()))} · ${esc(repeatText(ev))}</p>
+    <div class="occ-actions">
+      <button type="button" class="btn block" id="occ-day">✏️ ${esc(t('occThisDay'))}</button>
+      <button type="button" class="btn block" id="occ-all">🔁 ${esc(t('occAll'))}</button>
+      <button type="button" class="btn block danger" id="occ-skip">🚫 ${esc(t('occSkip'))}</button>
+      ${occ.changed ? `<button type="button" class="btn block" id="occ-reset">↩️ ${esc(t('occReset'))}</button>` : ''}
+    </div>
+    <div class="actions"><span class="spacer"></span><button type="button" class="btn" data-close>${esc(t('close'))}</button></div>`,
+    (dlg) => {
+      const setExc = (val) => {
+        const exc = { ...pruneExc(ev.exc, addDays(hkToday(), -60)) };
+        if (val) exc[date] = val;
+        else delete exc[date];
+        store().updateEvent(fid(), ev.id, { exc }).catch(fail);
+      };
+      $('#occ-day', dlg).onclick = () => openEventDay(ev, date, setExc);
+      $('#occ-all', dlg).onclick = () => openEvent(ev);
+      $('#occ-skip', dlg).onclick = () => {
+        setExc({ skip: true });
+        dlg.close();
+        toast(t('occSkipped', { day: formatDay(date, locale()) }));
+      };
+      $('#occ-reset', dlg)?.addEventListener('click', () => {
+        setExc(null);
+        dlg.close();
+        toast(t('saved'));
+      });
+    },
+  );
+}
+
+// 只改某一日：時間、邊個、備註
+function openEventDay(ev, date, setExc) {
+  const occ = onDate(ev, date);
+  const members = [...getMembers()].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  openDialog(
+    `<form id="occ-form">
+      <h2>✏️ ${esc(eventTitle(ev))}</h2>
+      <p class="small muted">${esc(t('occOnly', { day: formatDay(date, locale()) }))}</p>
+      <label class="field"><span>${esc(t('eventTime'))}</span><input class="input" type="time" name="time" value="${esc(occ.time || '')}"></label>
+      <div class="field"><span>${esc(t('eventWho'))}</span>
+        <div class="segmented">${[['', t('choreAnyone')], ...members.map((m) => [m.id, m.name])]
+          .map(([id, n]) => `<label><input type="radio" name="who" value="${esc(id)}" ${id === (occ.who || '') ? 'checked' : ''}><span>${esc(n)}</span></label>`)
+          .join('')}</div></div>
+      <label class="field"><span>${esc(t('dinnerNote'))}</span><input class="input" name="note" maxlength="200" value="${esc(occ.note || '')}"></label>
+      <div class="actions"><span class="spacer"></span>
+        <button type="button" class="btn" data-close>${esc(t('cancel'))}</button>
+        <button class="btn primary">${esc(t('save'))}</button>
+      </div>
+    </form>`,
+    (dlg) => {
+      $('#occ-form', dlg).onsubmit = (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        setExc({
+          time: /^\d{2}:\d{2}$/.test(f.get('time') || '') ? f.get('time') : '',
+          who: clean(f.get('who'), 40),
+          note: clean(f.get('note'), 200),
+        });
+        dlg.close();
+        toast(t('saved'));
       };
     },
   );

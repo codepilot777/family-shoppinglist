@@ -1,6 +1,6 @@
 // 離線用：用快取開 app；有新版本就喺背景下載，等用戶撳「更新」。Firestore 請求唔經呢度。
 // 版本號：GitHub Actions 發佈時會自動換成 commit SHA（每次發佈都算新版本）。
-const CACHE = 'fsl-v19';
+const CACHE = 'fsl-v20';
 const SHELL = [
   './',
   'index.html',
@@ -21,6 +21,7 @@ const SHELL = [
   'chores.js',
   'chores-view.js',
   'calendar-view.js',
+  'events.js',
   'roster.js',
   'roster-view.js',
   'xlsx-lite.js',

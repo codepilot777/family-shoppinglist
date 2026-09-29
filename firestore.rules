@@ -248,12 +248,18 @@ service cloud.firestore {
         && shortString(request.resource.data.get('by', ''), 20);
     }
 
-    // 📅 事項（一次性）：家長日、覆診、考試…；who = 相關嘅食飯成員 ID（可以留空），photo = 通告相 ID
+    // 📅 事項：家長日、覆診、考試…（一次性），或者每星期重複（repeat = 星期幾，until = 最後一日，exc = 某日取消 / 另外安排）
+    // who = 相關嘅食飯成員 ID（可以留空），photo = 通告相 ID
     match /families/{familyId}/events/{eventId} {
       allow read, delete: if canUse(familyId);
       allow create, update: if canUse(familyId)
         && familyExists(familyId)
-        && request.resource.data.keys().hasOnly(['title', 'lang', 'tr', 'trAuto', 'date', 'time', 'who', 'note', 'photo', 'by', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['title', 'lang', 'tr', 'trAuto', 'date', 'time', 'who', 'note', 'photo', 'by', 'createdAt', 'repeat', 'until', 'exc'])
+        && request.resource.data.get('repeat', []) is list
+        && request.resource.data.get('repeat', []).size() <= 7
+        && request.resource.data.get('until', '').matches('^([0-9]{4}-[0-9]{2}-[0-9]{2})?$')
+        && request.resource.data.get('exc', {}) is map
+        && request.resource.data.get('exc', {}).size() <= 120
         && shortString(request.resource.data.title, 60)
         && request.resource.data.title.size() > 0
         && request.resource.data.get('tr', {}) is map
