@@ -3,6 +3,7 @@ import { canInstall, openInstall, onInstallChange, isIOS } from './install.js';
 import { openDevices, deviceLabel, familyCode, parseFamilyCode } from './devices-view.js';
 import { watchForUpdates } from './update.js';
 import { initWallet, walletOnEnterFamily, renderWallet, openExpense, snapReceipts } from './wallet-view.js';
+import { initChores, choresOnEnterFamily, renderChores } from './chores-view.js';
 import { topFrequent, freqKey } from './freq.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
@@ -97,10 +98,11 @@ async function boot() {
   const params = new URLSearchParams(location.search);
   const invite = clean(params.get('f'), 40).toLowerCase();
   const inviteKey = clean(params.get('k'), 40).toLowerCase();
-  if (['dinner', 'wallet'].includes(params.get('view'))) ls.set('fsl-view', params.get('view'));
+  if (VIEWS.some(([v]) => v === params.get('view'))) ls.set('fsl-view', params.get('view'));
   if (location.search) window.history.replaceState(null, '', location.pathname);
   initDinner({ state });
   initWallet({ state });
+  initChores({ state });
 
   try {
     state.store = await createStore();
@@ -386,6 +388,7 @@ function enterFamily(fid) {
     }),
     ...dinnerOnEnterFamily(fid),
     ...walletOnEnterFamily(fid),
+    ...choresOnEnterFamily(fid),
     s.subscribeFreq(
       fid,
       (docs) => {
@@ -401,6 +404,7 @@ function enterFamily(fid) {
 const VIEWS = [
   ['shop', 'viewShop'],
   ['dinner', 'viewDinner'],
+  ['chores', 'viewChores'],
   ['wallet', 'viewWallet'],
 ];
 function visibleViews() {
@@ -421,10 +425,12 @@ function showView(view) {
   $('.addbar')?.classList.toggle('hidden', view !== 'shop');
   $('#dinner')?.classList.toggle('hidden', view !== 'dinner');
   $('#wallet')?.classList.toggle('hidden', view !== 'wallet');
+  $('#chores')?.classList.toggle('hidden', view !== 'chores');
   // 冇底部輸入欄嘅頁唔使留位
   document.body.classList.toggle('dinner-mode', view !== 'shop');
   if (view === 'dinner') renderDinner();
   else if (view === 'wallet') renderWallet();
+  else if (view === 'chores') renderChores();
   else render();
 }
 
@@ -456,7 +462,10 @@ function renderShell() {
     </header>
     <nav class="views ${visibleViews().length < 2 ? 'hidden' : ''}" style="--n:${visibleViews().length}">
       ${VIEWS.filter(([v]) => visibleViews().includes(v))
-        .map(([v, key]) => `<button data-view="${v}">${esc(t(key))}</button>`)
+        .map(([v, key]) => {
+          const [icon, ...label] = t(key).split(' ');
+          return `<button data-view="${v}"><span class="v-icon" aria-hidden="true">${esc(icon)}</span><span>${esc(label.join(' '))}</span></button>`;
+        })
         .join('')}
     </nav>
     <div id="shop-view">
@@ -470,6 +479,7 @@ function renderShell() {
     </div>
     <main id="dinner" class="hidden"></main>
     <main id="wallet" class="hidden"></main>
+    <main id="chores" class="hidden"></main>
     <div class="addbar">
       <form id="add-form" autocomplete="off">
         ${SpeechRecognition ? `<button type="button" class="btn mic" id="mic" aria-label="${esc(t('voice'))}" title="${esc(t('voice'))}">🎤</button>` : ''}

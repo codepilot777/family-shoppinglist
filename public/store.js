@@ -75,6 +75,7 @@ async function createFirebaseStore(firebaseConfig) {
   const walletCol = (fid) => fb.collection(db, 'families', fid, 'wallet');
   const freqCol = (fid) => fb.collection(db, 'families', fid, 'freq');
   const inboxCol = (fid) => fb.collection(db, 'families', fid, 'inbox');
+  const choresCol = (fid) => fb.collection(db, 'families', fid, 'chores');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -250,6 +251,29 @@ async function createFirebaseStore(firebaseConfig) {
 
     setRecipeTranslation(fid, rid, lang, text, auto) {
       return fb.updateDoc(fb.doc(recipesCol(fid), rid), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
+    },
+
+    // ---------- 🧹 家務 ----------
+    subscribeChores(fid, cb, onError) {
+      return fb.onSnapshot(choresCol(fid), (snap) => cb(readDocs(snap)), onError);
+    },
+
+    async addChores(fid, chores) {
+      const batch = fb.writeBatch(db);
+      for (const c of chores) batch.set(fb.doc(choresCol(fid)), { ...c, createdAt: fb.serverTimestamp() });
+      return batch.commit();
+    },
+
+    updateChore(fid, id, patch) {
+      return fb.updateDoc(fb.doc(choresCol(fid), id), patch);
+    },
+
+    deleteChore(fid, id) {
+      return fb.deleteDoc(fb.doc(choresCol(fid), id));
+    },
+
+    setChoreTranslation(fid, id, lang, text, auto) {
+      return fb.updateDoc(fb.doc(choresCol(fid), id), { [`tr.${lang}`]: text, [`trAuto.${lang}`]: auto });
     },
 
     // 某一晚揀咗邊啲菜式
@@ -608,6 +632,37 @@ function createLocalStore() {
       if (!r) return;
       r.tr = { ...r.tr, [lang]: text };
       r.trAuto = { ...r.trAuto, [lang]: auto };
+      save();
+    },
+
+    subscribeChores(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.chores || {}).map(([id, c]) => ({ id, ...c }))));
+    },
+
+    async addChores(fid, chores) {
+      const f = fam(fid);
+      f.chores = f.chores || {};
+      chores.forEach((c, i) => (f.chores[randomId()] = { ...c, createdAt: Date.now() + i }));
+      save();
+    },
+
+    async updateChore(fid, id, patch) {
+      const c = fam(fid).chores?.[id];
+      if (!c) return;
+      Object.assign(c, patch);
+      save();
+    },
+
+    async deleteChore(fid, id) {
+      delete fam(fid).chores?.[id];
+      save();
+    },
+
+    async setChoreTranslation(fid, id, lang, text, auto) {
+      const c = fam(fid).chores?.[id];
+      if (!c) return;
+      c.tr = { ...c.tr, [lang]: text };
+      c.trAuto = { ...c.trAuto, [lang]: auto };
       save();
     },
 

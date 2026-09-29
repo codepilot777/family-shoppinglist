@@ -55,4 +55,23 @@ assert.match(lowMsgs[0].data.url, /view=wallet/);
 msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, wallet: { balance: 50000, low: 20000 } });
 assert.equal(msgs.filter((m) => m.data.tag === 'wallet-low').length, 0);
 
+// 🧹 家務：朝早淨係發俾負責人，過咗期嘅標「遲咗」；任何人 / 未到期 / 截數時間都唔發
+const chores = [
+  { name: '換床單', due: '2026-09-28', who: 'siti' },
+  { name: '抹窗', tr: { id: 'Lap jendela kaca' }, due: '2026-09-29', who: 'siti' },
+  { name: '淋花', due: '2026-09-29', who: 'dad' },
+  { name: '洗廁所', due: '2026-09-29', who: '' },
+  { name: '清雪櫃', due: '2026-09-30', who: 'siti' },
+  { name: '倒回收', due: '2026-09-29', who: 'gran' },
+];
+msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, chores });
+const choreMsgs = msgs.filter((m) => m.data.tag === 'chores');
+assert.deepEqual(choreMsgs.map((m) => m.key), ['k1', 'k3']);
+assert.equal(choreMsgs[0].data.title, '🧹 今日家務（1 樣）');
+assert.equal(choreMsgs[0].data.body, '淋花');
+assert.equal(choreMsgs[1].data.title, '🧹 Tugas hari ini (2)');
+assert.equal(choreMsgs[1].data.body, 'Ganti seprai (terlambat), Lap jendela kaca');
+assert.match(choreMsgs[1].data.url, /view=chores$/);
+assert.equal(buildMessages({ mode: 'cutoff', today: '2026-09-29', members, dinners, devices, appUrl, chores }).filter((m) => m.data.tag === 'chores').length, 0);
+
 console.log('messages.test.mjs: all passed');

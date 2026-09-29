@@ -30,7 +30,9 @@ const byCreated = (a, b) => (a.createdAt || 0) - (b.createdAt || 0);
 const statusText = (home) => (home ? `✅ ${t('home')}` : `❌ ${t('away')}`);
 const appUrl = () => `${location.origin}${location.pathname}`;
 
-function myMemberId() {
+export const getMembers = () => d.members;
+
+export function myMemberId() {
   const id = ls.get(`fsl-member-${fid()}`);
   return d.members.some((m) => m.id === id) ? id : null;
 }
@@ -61,6 +63,7 @@ export function dinnerOnEnterFamily(familyId) {
       d.members = members;
       renderDinner();
       refreshPushToken();
+      document.dispatchEvent(new Event('fsl-members')); // 🧹 家務要顯示負責人
     },
     fail,
   );
