@@ -98,7 +98,7 @@ async function boot() {
   const params = new URLSearchParams(location.search);
   const invite = clean(params.get('f'), 40).toLowerCase();
   const inviteKey = clean(params.get('k'), 40).toLowerCase();
-  if (VIEWS.includes(params.get('view'))) ls.set('fsl-view', params.get('view'));
+  if (VIEWS.some(([v]) => v === params.get('view'))) ls.set('fsl-view', params.get('view'));
   if (location.search) window.history.replaceState(null, '', location.pathname);
   initDinner({ state });
   initWallet({ state });
@@ -400,10 +400,25 @@ function enterFamily(fid) {
   ];
 }
 
-const VIEWS = ['shop', 'dinner', 'chores', 'wallet'];
+// 分頁：每部機自己揀顯示邊啲（至少一個）
+const VIEWS = [
+  ['shop', 'viewShop'],
+  ['dinner', 'viewDinner'],
+  ['chores', 'viewChores'],
+  ['wallet', 'viewWallet'],
+];
+function visibleViews() {
+  let saved = [];
+  try {
+    saved = JSON.parse(ls.get('fsl-tabs') || '[]');
+  } catch {}
+  const shown = VIEWS.map(([v]) => v).filter((v) => !Array.isArray(saved) || !saved.length || saved.includes(v));
+  return shown.length ? shown : VIEWS.map(([v]) => v);
+}
 
 function showView(view) {
-  if (!VIEWS.includes(view)) view = 'shop';
+  const shown = visibleViews();
+  if (!shown.includes(view)) view = shown[0];
   ls.set('fsl-view', view);
   document.querySelectorAll('.views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
   $('#shop-view')?.classList.toggle('hidden', view !== 'shop');
@@ -445,13 +460,8 @@ function renderShell() {
       <button class="icon-btn" id="invite-btn" aria-label="${esc(t('invite'))}" title="${esc(t('invite'))}">👪</button>
       <button class="icon-btn" id="settings-btn" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">⚙️</button>
     </header>
-    <nav class="views">
-      ${[
-        ['shop', 'viewShop'],
-        ['dinner', 'viewDinner'],
-        ['chores', 'viewChores'],
-        ['wallet', 'viewWallet'],
-      ]
+    <nav class="views ${visibleViews().length < 2 ? 'hidden' : ''}" style="--n:${visibleViews().length}">
+      ${VIEWS.filter(([v]) => visibleViews().includes(v))
         .map(([v, key]) => {
           const [icon, ...label] = t(key).split(' ');
           return `<button data-view="${v}"><span class="v-icon" aria-hidden="true">${esc(icon)}</span><span>${esc(label.join(' '))}</span></button>`;
@@ -1260,6 +1270,12 @@ function openSettings() {
           .map(([v, label]) => `<label><input type="radio" name="size" value="${v}" ${v === size ? 'checked' : ''}><span>${esc(label)}</span></label>`)
           .join('')}</div>
       </div>
+      <div class="field"><span>🗂 ${esc(t('visibleTabs'))}</span>
+        <div class="cats">${VIEWS.map(
+          ([v, key]) => `<label><input type="checkbox" name="tabs" value="${v}" ${visibleViews().includes(v) ? 'checked' : ''}><span>${esc(t(key))}</span></label>`,
+        ).join('')}</div>
+        <p class="small muted">${esc(t('visibleTabsHint'))}</p>
+      </div>
       <label class="field"><span>${esc(t('yourNameShort'))}</span><input class="input" name="me" maxlength="20" required value="${esc(state.me)}"></label>
       <label class="field"><span>${esc(t('familyName'))}</span><input class="input" name="family" maxlength="30" required value="${esc(state.family?.name || '')}"></label>
       ${
@@ -1296,6 +1312,10 @@ function openSettings() {
         const fam = clean(f.get('family'), 30);
         const ln = clean(f.get('list'), 30);
         const lang = f.get('lang');
+        const tabs = f.getAll('tabs');
+        if (!tabs.length) return toast(t('needOneTab'));
+        const tabsChanged = tabs.join() !== visibleViews().join();
+        if (tabsChanged) ls.set('fsl-tabs', tabs.length === VIEWS.length ? null : JSON.stringify(tabs));
         applyTextSize(f.get('size') || 'normal');
         if (me && me !== state.me) {
           rememberName(me);
@@ -1313,6 +1333,9 @@ function openSettings() {
           renderShell();
           render();
           refreshPushToken();
+        } else if (tabsChanged) {
+          renderShell();
+          render();
         }
         toast(t('saved'));
       };
