@@ -289,6 +289,24 @@ home-hub/我哋屋企-ab12/
 
 每次發佈新版本，app 頂部會出現「🔄 有新版本 · 更新」，撳一下就換成新版本，唔使再「重新整理兩次」。版本號由 GitHub Actions 發佈時自動用 commit 編號，唔使人手改。
 
+## 🧪 自動測試
+
+每個 PR 同 main 有改動，GitHub Actions（**Tests**）都會自動跑一次，全部用 Firebase emulator，唔會掂真資料：
+
+- **單元測試**（`scripts/notify/*.test.mjs`）：食飯人數、通知內容、家務排期、事項重複、roster、Excel、家用計數…
+- **Firestore 規則**（`tests/rules.test.mjs`）：未登記 / 被移除嘅機讀寫唔到、每種資料嘅格式檢查
+- **NAS 匯出**（`tests/export.test.mjs`）：備份齊晒、`calendar.csv` 內容、唔會匯出邀請代碼
+- **瀏覽器**（`tests/e2e/*.test.mjs`，Playwright）：多部「電話」一齊用（中文 + 印尼文），試購物、家用、影單、roster / 放假、家務、日曆重複事項、菜式合併。測試用嘅 roster / Excel 係跟今日日子自動砌，唔會過期
+
+自己部電腦跑（要 Node 22 同 Java）：
+
+```sh
+cd tests
+npm ci && npx playwright install chromium
+npm ci --omit=dev --prefix ../scripts/export
+npm test
+```
+
 ## 本機試用 / 開發
 
 唔填 Firebase config 都可以即刻試（**示範模式**，資料只存喺本機，唔會同步）：
@@ -341,6 +359,8 @@ public/
   sw.js                 離線快取
   vendor/firebase.js    Firebase SDK
 firestore.rules         Firestore 安全規則
+firebase.json           Firebase 設定（emulator、`firebase deploy --only firestore:rules`）
+tests/                  自動測試（規則、NAS 匯出、瀏覽器）
 scripts/notify/         食飯通知 script（GitHub Actions 定時執行）
 scripts/export/         匯出去 NAS（家用 CSV、單據相、完整備份）
 .github/workflows/      自動發佈到 GitHub Pages、定時發通知
