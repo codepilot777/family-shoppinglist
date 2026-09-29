@@ -7,7 +7,7 @@ rules_version = '2';
 //
 // 👑 權限（兩級）：管理員睇晒所有嘢，可以揀每部機（屋企人）用得邊啲分頁（tabs）。
 // 未有管理員嘅家庭（舊家庭升級前）照舊：已登記嘅機全部都用得，直至有人撳「我係管理員」。
-// 分頁：shop 購物、dinner 食飯（連菜式）、chores 家務、wallet 家用（連未入數嘅單）。
+// 分頁：shop 購物、dinner 食飯（連菜式）、chores 家務、dues 到期、wallet 家用（連未入數嘅單）。
 // 日曆事項、roster、成員名、字典、相、通知 token：所有已登記嘅機都用得。
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -58,7 +58,7 @@ service cloud.firestore {
                 || tab in myDevice(familyId).get('tabs', ['shop', 'dinner'])));
     }
     function validTabs(v) {
-      return v is list && v.size() <= 8 && v.hasOnly(['shop', 'dinner', 'chores', 'wallet']);
+      return v is list && v.size() <= 8 && v.hasOnly(['shop', 'dinner', 'chores', 'dues', 'wallet']);
     }
     // 邊個可以改家庭設定：管理員乜都改得；未有管理員嗰陣照舊（仲可以「我係管理員」）；
     // 有管理員之後，屋企人只可以改自己分頁嘅設定（買餸日要食飯、低餘額提醒要家用）
@@ -294,6 +294,55 @@ service cloud.firestore {
         && shortString(request.resource.data.get('note', ''), 200)
         && shortString(request.resource.data.get('lastDone', ''), 10)
         && shortString(request.resource.data.get('lastBy', ''), 20)
+        && shortString(request.resource.data.get('by', ''), 20);
+    }
+
+    // 📋 到期：帳單、證件合約、保養…；unit week / month / year / once；amount 同 history[].a 係仙
+    match /families/{familyId}/dues/{dueId} {
+      allow read, delete: if can(familyId, 'dues');
+      allow create, update: if can(familyId, 'dues')
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(
+             ['name', 'lang', 'tr', 'trAuto', 'cat', 'every', 'unit', 'start', 'due', 'warn', 'who', 'amount', 'auto', 'history',
+              'note', 'closed', 'lastDone', 'lastBy', 'by', 'createdAt'])
+        && shortString(request.resource.data.name, 60)
+        && request.resource.data.name.size() > 0
+        && request.resource.data.get('tr', {}) is map
+        && request.resource.data.get('tr', {}).size() <= 3
+        && request.resource.data.get('trAuto', {}) is map
+        && shortString(request.resource.data.cat, 40)
+        && request.resource.data.every is int
+        && request.resource.data.every >= 1
+        && request.resource.data.every <= 99
+        && request.resource.data.unit in ['week', 'month', 'year', 'once']
+        && request.resource.data.start.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.due.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.get('warn', 0) is int
+        && request.resource.data.get('warn', 0) >= 0
+        && request.resource.data.get('warn', 0) <= 366
+        && request.resource.data.get('amount', 0) is int
+        && request.resource.data.get('amount', 0) >= 0
+        && request.resource.data.get('amount', 0) <= 100000000
+        && request.resource.data.get('auto', false) is bool
+        && request.resource.data.get('closed', false) is bool
+        && request.resource.data.get('history', []) is list
+        && request.resource.data.get('history', []).size() <= 12
+        && shortString(request.resource.data.get('who', ''), 40)
+        && shortString(request.resource.data.get('note', ''), 200)
+        && shortString(request.resource.data.get('lastDone', ''), 10)
+        && shortString(request.resource.data.get('lastBy', ''), 20)
+        && shortString(request.resource.data.get('by', ''), 20);
+    }
+
+    // 📋 自己加嘅到期類別
+    match /families/{familyId}/duecats/{catId} {
+      allow read, delete: if can(familyId, 'dues');
+      allow create, update: if can(familyId, 'dues')
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(['name', 'icon', 'by', 'createdAt'])
+        && shortString(request.resource.data.name, 20)
+        && request.resource.data.name.size() > 0
+        && shortString(request.resource.data.get('icon', ''), 8)
         && shortString(request.resource.data.get('by', ''), 20);
     }
 

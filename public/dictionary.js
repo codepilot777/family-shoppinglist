@@ -232,6 +232,21 @@ export const DICTIONARY = [
   ['洗抽油煙機', 'Clean the range hood', 'Bersihkan cerobong asap dapur', 'other'],
   ['洗窗簾', 'Wash the curtains', 'Cuci gorden', 'other'],
   ['倒回收', 'Take out the recycling', 'Buang sampah daur ulang', 'other'],
+  // 📋 到期
+  ['差餉', 'Rates', 'Pajak rumah (rates)', 'other'],
+  ['地租', 'Government rent', 'Sewa tanah pemerintah', 'other'],
+  ['電費', 'Electricity bill', 'Tagihan listrik', 'other'],
+  ['水費', 'Water bill', 'Tagihan air', 'other'],
+  ['煤氣費', 'Gas bill', 'Tagihan gas', 'other'],
+  ['管理費', 'Management fee', 'Biaya pengelola gedung', 'other'],
+  ['上網費', 'Internet bill', 'Tagihan internet', 'other'],
+  ['家居保險', 'Home insurance', 'Asuransi rumah', 'other'],
+  ['姐姐合約續約', 'Helper contract renewal', 'Perpanjangan kontrak PRT', 'other'],
+  ['護照到期', 'Passport expiry', 'Paspor habis berlaku', 'other'],
+  ['車牌續期', 'Car licence renewal', 'Perpanjangan STNK mobil', 'other'],
+  ['冷氣清洗', 'Air-con servicing', 'Servis AC', 'other'],
+  ['濾水器換芯', 'Change water filter', 'Ganti filter air', 'other'],
+  ['滅火筒檢查', 'Fire extinguisher check', 'Cek pemadam api', 'other'],
 ];
 
 // 快速查詢：任何語言、任何同義詞（細楷）→ { zh, en, id, cat }

@@ -565,6 +565,32 @@ dialog.camera:not([open]) { display: none; }
 .every-row { align-items: center; flex-wrap: wrap; }
 .every-input { width: 5rem; flex: none; font-size: 1.25rem; text-align: center; }
 
+/* ---------- 📋 到期 ---------- */
+.dues-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; text-align: center; }
+.dues-summary b { display: block; font-size: 1.75rem; line-height: 1.1; }
+.dues-summary span { font-size: 0.8125rem; color: var(--muted); }
+.dues-summary .red b { color: var(--danger); }
+.dues-summary .amber b { color: #d97706; }
+.due-cats { display: flex; flex-wrap: wrap; gap: 0.375rem; margin: 0.75rem 0 0.25rem; }
+.due-cats .freq-chip { border-style: solid; border-color: var(--line); background: var(--surface); }
+.due-cats .freq-chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.due-cats .freq-chip small { opacity: 0.7; margin-left: 0.125rem; }
+.due-list .item { padding-left: 0.625rem; }
+.due-auto { flex: none; width: 2.75rem; height: 2.75rem; display: grid; place-items: center; font-size: 1.25rem; color: var(--muted); }
+.due.st-over .chore-check { border-color: var(--danger); }
+.due.st-soon .chore-check { border-color: #d97706; }
+.due.st-done .name { color: var(--muted); }
+.due-left { flex: none; display: grid; justify-items: end; text-align: right; margin-left: 0.5rem; }
+.due-left b { font-size: 1rem; white-space: nowrap; }
+.due-left small { color: var(--muted); font-size: 0.8125rem; }
+.due.st-over .due-left b { color: var(--danger); }
+.due.st-soon .due-left b { color: #d97706; }
+.due-when > .field { flex: 1 1 9.5rem; }
+.due-history { display: grid; gap: 0.25rem; }
+.due-history .hbar { display: grid; grid-template-columns: 4.5rem 1fr auto; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
+.due-history .hbar i { display: block; height: 0.625rem; border-radius: 99px; background: var(--accent); }
+.due-history .hbar span { color: var(--muted); }
+
 /* ---------- 📅 日曆（全屏） ---------- */
 dialog.sheet {
   width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0;

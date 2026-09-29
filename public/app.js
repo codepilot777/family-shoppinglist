@@ -4,6 +4,7 @@ import { openDevices, deviceLabel, familyCode, parseFamilyCode } from './devices
 import { watchForUpdates } from './update.js';
 import { initWallet, walletOnEnterFamily, renderWallet, openExpense, snapReceipts } from './wallet-view.js';
 import { initChores, choresOnEnterFamily, renderChores } from './chores-view.js';
+import { initDues, duesOnEnterFamily, renderDues } from './dues-view.js';
 import { initCalendar, calendarOnEnterFamily, openCalendar } from './calendar-view.js';
 import { initRoster } from './roster-view.js';
 import { topFrequent, freqKey } from './freq.js';
@@ -108,6 +109,7 @@ async function boot() {
   initDinner({ state });
   initWallet({ state });
   initChores({ state });
+  initDues({ state });
   initRoster({ state });
   initCalendar({ state, visibleViews: () => visibleViews(), go: (view) => showView(view) });
 
@@ -352,7 +354,7 @@ function leaveFamily() {
 // ---------- 主畫面 ----------
 
 // 👑 權限：舊式家庭 / 未有管理員 / 示範模式 → 用晒；管理員 → 用晒；屋企人 → 管理員畀佢嘅分頁
-const ALL_TABS = ['shop', 'dinner', 'chores', 'wallet'];
+const ALL_TABS = ['shop', 'dinner', 'chores', 'dues', 'wallet'];
 const DEFAULT_TABS = ['shop', 'dinner'];
 function computeAccess(fam, dev) {
   const legacy = !fam?.joinCode;
@@ -462,6 +464,7 @@ function startData(fid) {
   }
   if (canTab('wallet')) subs.push(...walletOnEnterFamily(fid));
   if (canTab('chores')) subs.push(...choresOnEnterFamily(fid));
+  if (canTab('dues')) subs.push(...duesOnEnterFamily(fid));
   state.dataUnsubs = subs;
 }
 
@@ -470,6 +473,7 @@ const VIEWS = [
   ['shop', 'viewShop'],
   ['dinner', 'viewDinner'],
   ['chores', 'viewChores'],
+  ['dues', 'viewDues'],
   ['wallet', 'viewWallet'],
 ];
 function visibleViews() {
@@ -488,11 +492,13 @@ function showView(view) {
   $('#dinner')?.classList.toggle('hidden', view !== 'dinner');
   $('#wallet')?.classList.toggle('hidden', view !== 'wallet');
   $('#chores')?.classList.toggle('hidden', view !== 'chores');
+  $('#dues')?.classList.toggle('hidden', view !== 'dues');
   // 冇底部輸入欄嘅頁唔使留位
   document.body.classList.toggle('dinner-mode', view !== 'shop');
   if (view === 'dinner') renderDinner();
   else if (view === 'wallet') renderWallet();
   else if (view === 'chores') renderChores();
+  else if (view === 'dues') renderDues();
   else render();
 }
 
@@ -544,6 +550,7 @@ function renderShell() {
     <main id="wallet" class="hidden"></main>
     <div id="no-access" class="empty hidden"><div class="big">🔒</div><p>${esc(t('noTabs'))}</p></div>
     <main id="chores" class="hidden"></main>
+    <main id="dues" class="hidden"></main>
     <div class="addbar">
       <form id="add-form" autocomplete="off">
         ${SpeechRecognition ? `<button type="button" class="btn mic" id="mic" aria-label="${esc(t('voice'))}" title="${esc(t('voice'))}">🎤</button>` : ''}

@@ -9,6 +9,8 @@ import { compressImage } from './image.js';
 import { getMembers, dinnerSummary } from './dinner-view.js';
 import { dishesLine } from './menu-view.js';
 import { choresOn } from './chores-view.js';
+import { duesOn } from './dues-view.js';
+import { fmtMoney } from './wallet-view.js';
 import { rosterRows, rosterCount, anyOff, pickRosterFile, openRosterSettings } from './roster-view.js';
 import { eventsOnDate, isRepeating, onDate, repeatLabel, pruneExc } from './events.js';
 
@@ -87,6 +89,7 @@ const repeatText = (e) =>
 function marks(date, today) {
   let n = eventsOn(date).length + rosterCount(date);
   if (shows('chores')) n += choresOn(date, today).length;
+  if (shows('dues')) n += duesOn(date, today).length;
   const market = shows('dinner') && (state().family?.marketDays || []).includes(weekday(date));
   return { n, market, off: anyOff(date) };
 }
@@ -123,6 +126,16 @@ function agendaHtml(date, today) {
         <span class="body"><span class="name">${esc(c.label)}</span>
           <div class="meta">${esc([c.whoName && `👤 ${c.whoName}`, date < today && c.lastBy && `✓ ${c.lastBy}`].filter(Boolean).join(' · '))}${
             late ? ` <span class="late-txt">${esc(t('calLate'))}</span>` : ''
+          }</div></span>
+        <span class="more" aria-hidden="true">›</span></button></li>`);
+    }
+  }
+  if (shows('dues')) {
+    for (const d of duesOn(date, today)) {
+      rows.push(`<li class="item cal-row"><button class="toggle" data-go="dues"><span class="cal-time">${esc(d.icon)}</span>
+        <span class="body"><span class="name">${esc(d.label)}</span>
+          <div class="meta">${esc([d.amount && fmtMoney(d.amount), d.whoName && `👤 ${d.whoName}`, date < today && d.lastBy && `✓ ${d.lastBy}`].filter(Boolean).join(' · '))}${
+            date === today && d.late ? ` <span class="late-txt">${esc(t('calLate'))}</span>` : ''
           }</div></span>
         <span class="more" aria-hidden="true">›</span></button></li>`);
     }

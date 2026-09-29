@@ -25,6 +25,9 @@ await env.withSecurityRulesDisabled(async (c) => {
   await put('rosters/siti', { trips: [], reserves: [], off: ['2026-10-04', '2026-10-11'] });
   await put('freq/milk', { name: '牛奶', count: 3 });
   await put('inbox/r1', { photo: 'p1', thumb: '', by: 'Siti' });
+  await put('dues/d1', { name: '差餉', cat: 'bill', every: 3, unit: 'month', start: '2026-10-31', due: '2026-10-31', who: 'dad', amount: 238000, auto: false });
+  await put('dues/d2', { name: '護照到期', cat: 'doc', every: 1, unit: 'once', start: '2026-10-09', due: '2026-10-09', closed: true });
+  await put('duecats/k1', { name: '車', icon: '🚗' });
 });
 
 const out = mkdtempSync(join(tmpdir(), 'export-'));
@@ -33,7 +36,7 @@ const log = execFileSync('node', [new URL('../scripts/export/export.mjs', import
   encoding: 'utf8',
 });
 const dir = join(out, `測試屋企-${FID.slice(-4)}`);
-for (const c of ['chores', 'events', 'rosters', 'freq', 'inbox']) {
+for (const c of ['chores', 'events', 'rosters', 'freq', 'inbox', 'dues', 'duecats']) {
   assert.ok(existsSync(join(dir, 'backup', `${c}.json`)), `backup/${c}.json`);
   assert.equal(JSON.parse(readFileSync(join(dir, 'backup', `${c}.json`), 'utf8')).length > 0, true, `${c} has data`);
 }
@@ -52,6 +55,7 @@ assert.deepEqual(
     '2026-10-08,19:00,,event,,家長日,爸爸,"帶手冊, 簽名"',
     '2026-10-10,09:10,2026-10-10 10:10,reserve,,AR8,爸爸,',
     '2026-10-11,,,off,,,Siti,',
+    '2026-10-31,,,due,每 3 個月,差餉,爸爸,"$2,380"',
   ],
 );
 console.log(log.trim().split('\n').at(-1));

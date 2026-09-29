@@ -5,7 +5,7 @@ import { createFamily, join, grant, tabsOf, text, until } from './lib.mjs';
 export default async function ({ device }) {
   const dad = await device('dad');
   const link = await createFamily(dad, '爸爸');
-  assert.deepEqual(await tabsOf(dad), ['shop', 'dinner', 'chores', 'wallet'], 'admin sees every tab');
+  assert.deepEqual(await tabsOf(dad), ['shop', 'dinner', 'chores', 'dues', 'wallet'], 'admin sees every tab');
 
   const siti = await device('siti', { locale: 'id-ID' });
   await join(siti, link, 'Siti');
@@ -37,7 +37,7 @@ export default async function ({ device }) {
 
   // 升做管理員 → 睇晒，仲可以改權限
   await grant(dad, 'Siti', 'admin');
-  await until(async () => (await tabsOf(siti)).length === 4, { message: 'admin sees all' });
+  await until(async () => (await tabsOf(siti)).length === 5, { message: 'admin sees all' });
   await siti.click('#settings-btn');
   await siti.click('#open-devices');
   await siti.waitForSelector('.device-list .device-access');

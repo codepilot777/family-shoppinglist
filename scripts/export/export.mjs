@@ -1,7 +1,7 @@
 // 將屋企通嘅資料匯出去 NAS（或者任何一部電腦）：
 //   <OUT_DIR>/<家庭名>-<ID 尾 4 位>/
 //     wallet-all.csv            全部家用紀錄（Excel 開得）
-//     calendar.csv              日曆：事項（連重複）、出勤、放假（Excel 開得）
+//     calendar.csv              日曆：事項（連重複）、出勤、放假、到期（Excel 開得）
 //     wallet/2026-09.csv        每月一個檔
 //     receipts/2026-09-28_街市_218.00_1.jpg   單據相（已經有就唔再下載）
 //     photos/<id>.jpg           其他相（貨品相）
@@ -37,7 +37,7 @@ if (FIRESTORE_EMULATOR_HOST) {
 const db = getFirestore();
 
 // 備份嘅 collection（push token 同邀請代碼唔匯出）
-const COLLECTIONS = ['lists', 'items', 'members', 'dinners', 'recipes', 'dict', 'wallet', 'devices', 'freq', 'chores', 'events', 'rosters', 'inbox'];
+const COLLECTIONS = ['lists', 'items', 'members', 'dinners', 'recipes', 'dict', 'wallet', 'devices', 'freq', 'chores', 'events', 'rosters', 'inbox', 'dues', 'duecats'];
 
 const safe = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40) || '_';
 const exists = (p) => access(p).then(() => true, () => false);
@@ -51,7 +51,7 @@ function plain(v) {
 }
 // 📅 日曆 CSV：事項（重複嘅寫一行，註明逢星期幾）、roster 出勤 / reserve / 放假
 const csvCell = (v) => (/[",\r\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''));
-function calendarCSV(events, rosters, members) {
+function calendarCSV(events, rosters, members, dues = []) {
   const name = (id) => members.find((m) => m.id === id)?.name || '';
   const days = ['日', '一', '二', '三', '四', '五', '六'];
   const rows = [];
@@ -66,6 +66,13 @@ function calendarCSV(events, rosters, members) {
     for (const t of r.trips || []) rows.push({ kind: t.k === 'sim' ? 'sim' : 'duty', date: t.s.slice(0, 10), time: t.s.slice(11), end: t.e ? t.e.replace('T', ' ') : '', title: t.d || '', who: name(r.id) });
     for (const x of r.reserves || []) rows.push({ kind: 'reserve', date: x.s.slice(0, 10), time: x.s.slice(11), end: x.e.replace('T', ' '), title: x.c || '', who: name(r.id) });
     for (const d of r.off || []) rows.push({ kind: 'off', date: d, who: name(r.id) });
+  }
+  // 📋 到期：下次到期日一行（做完嘅一次性唔寫）
+  const every = (d) => (d.unit === 'once' ? '一次' : `每 ${d.every} ${{ week: '星期', month: '個月', year: '年' }[d.unit] || d.unit}`);
+  for (const d of dues) {
+    if (d.closed || !d.due) continue;
+    const money = d.amount ? `$${(d.amount / 100).toLocaleString('en', { maximumFractionDigits: 2 })}` : '';
+    rows.push({ kind: 'due', date: d.due, repeat: every(d), title: d.name, who: name(d.who), note: [money, d.auto && '自動', d.note].filter(Boolean).join(' · ') });
   }
   rows.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
   const cols = ['date', 'time', 'end', 'kind', 'repeat', 'title', 'who', 'note'];
@@ -110,7 +117,7 @@ for (const famRef of families) {
   const { joinCode, ...famInfo } = plain(fam);
   await writeFile(join(dir, 'backup', 'family.json'), JSON.stringify({ id: famRef.id, ...famInfo }, null, 2));
 
-  await writeFile(join(dir, 'calendar.csv'), calendarCSV(data.events, data.rosters, data.members));
+  await writeFile(join(dir, 'calendar.csv'), calendarCSV(data.events, data.rosters, data.members, data.dues));
 
   // 家用 CSV
   const walletSnap = await famRef.collection('wallet').get();
