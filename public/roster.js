@@ -138,7 +138,7 @@ export function awayAtDinner(roster, date) {
 }
 
 // 📅 日曆用：某日同 roster 有關嘅嘢
-// [{ kind: 'leave'|'away'|'back'|'turn'|'sim'|'reserve', trip|reserve, s, e }]
+// [{ kind: 'leave'|'away'|'back'|'turn'|'sim'|'reserve'|'off', trip|reserve }]
 export function rosterDay(roster, date) {
   if (!roster) return [];
   const out = [];
@@ -153,8 +153,71 @@ export function rosterDay(roster, date) {
     else if (sd < date && (ed == null || ed > date)) out.push({ kind: 'away', trip: t });
   }
   for (const r of roster.reserves || []) if (r.s.slice(0, 10) === date) out.push({ kind: 'reserve', reserve: r });
+  if (roster.off?.includes(date)) out.push({ kind: 'off' });
   return out;
 }
 
 // 預計返到屋企時間（收工 + commute）
 export const homeBy = (roster, t) => (t?.e ? fromMs(toMs(t.e) + settings(roster).commute * 60e3) : null);
+
+// ---------- 🌴 放假日（例如姐姐嘅 Excel 更表：日曆格仔，日子下面一格寫「OFF」）----------
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const OFF_LABEL = /^(off|rest|rest ?day|day ?off|holiday|leave|al|ph|sh|休息|放假|假|假期|年假|例假|公眾假期|libur|cuti)$/i;
+const MAX_OFF = 400;
+
+// sheet 名 → 月份（1–12），唔知就 0
+function sheetMonth(name) {
+  const n = String(name || '').trim().toLowerCase();
+  const i = MONTHS.findIndex((m) => n.startsWith(m));
+  if (i >= 0) return i + 1;
+  const m = /^(\d{1,2})\s*月/.exec(n);
+  return m && +m[1] >= 1 && +m[1] <= 12 ? +m[1] : 0;
+}
+
+// sheets: readXlsx() 嘅結果；toDate: Excel 序號 → 'YYYY-MM-DD'
+// → { from, to, off: [日子], other: { 其他字: 次數 } }
+export function parseOffDays(sheets, toDate) {
+  const isSerial = (v) => typeof v === 'number' && v > 36526 && v < 73051; // 2000–2099 年
+  const off = new Set();
+  const other = {};
+  let from = null;
+  let to = null;
+  for (const { name, cells } of sheets) {
+    const month = sheetMonth(name);
+    const rows = new Map();
+    for (const [key, v] of cells) {
+      if (!isSerial(v)) continue;
+      const [r, c] = key.split(',').map(Number);
+      if (!rows.has(r)) rows.set(r, []);
+      rows.get(r).push(c);
+    }
+    for (const [r, cols] of rows) {
+      if (cols.length < 5) continue; // 唔係日曆嗰行
+      for (const c of cols) {
+        const date = toDate(cells.get(`${r},${c}`));
+        if (month && Number(date.slice(5, 7)) !== month) continue; // 上 / 下個月嘅格仔，由嗰個月嘅 sheet 話事
+        if (!from || date < from) from = date;
+        if (!to || date > to) to = date;
+        const label = cells.get(`${r + 1},${c}`);
+        if (typeof label !== 'string' || !label.trim()) continue;
+        if (OFF_LABEL.test(label.trim())) off.add(date);
+        else other[label.trim()] = (other[label.trim()] || 0) + 1;
+      }
+    }
+  }
+  if (!from) throw new Error('no calendar dates found');
+  return { from, to, off: [...off].sort(), other };
+}
+
+// 再匯入：涵蓋嘅日子用新嘅；太舊嘅唔要
+export function mergeOff(oldOff, parsed, today) {
+  const cutoff = today ? fromMs(toMs(`${today}T00:00`) - KEEP_DAYS * 86400e3).slice(0, 10) : '';
+  const keep = (oldOff || []).filter((d) => d < parsed.from || d > parsed.to);
+  return [...new Set([...keep, ...parsed.off])]
+    .filter((d) => d >= cutoff)
+    .sort()
+    .slice(-MAX_OFF);
+}
+
+export const isOff = (roster, date) => !!roster?.off?.includes(date);

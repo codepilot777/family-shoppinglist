@@ -4,6 +4,7 @@ import { $, esc, ls, clean, toast, fail, openDialog, confirmDialog } from './ui.
 import { hkNow, hkToday, addDays, weekday, nextWeekStart, weekDates, formatDay } from './dates.js';
 import { CUTOFF_HOUR, attendance, summarize, isLateChange, defaultPattern } from './dinner.js';
 import { initMenu, subscribeRecipes, dishesLine, marketCardHtml, bindMenu } from './menu-view.js';
+import { isOff } from './roster.js';
 
 let ctx; // { state, onChange }
 const d = {
@@ -88,6 +89,17 @@ export function dinnerOnEnterFamily(familyId) {
   return [unsubMembers, unsubRosters, subscribeRecipes(familyId), () => d.unsubDinners?.()];
 }
 
+// 🌴 邊個放假（例如姐姐）；負責煮飯嘅人放假就提大家冇人煮
+const offMembers = (date) => d.members.filter((m) => isOff(m.roster, date));
+function offLine(date, short = false) {
+  const off = offMembers(date);
+  if (!off.length) return '';
+  const names = off.map((m) => m.name).join('、');
+  const cook = off.some((m) => m.eats === false);
+  if (short) return `🌴 ${t('rosterOffList', { names })}`;
+  return `<p class="off-line ${cook ? 'late-txt' : 'muted'} small">🌴 ${esc(t(cook ? 'rosterOffNoCook' : 'rosterOffList', { names }))}</p>`;
+}
+
 const daySummary = (date) => summarize(d.members, date, d.dinners[date], weekday(date));
 // 📅 日曆用：有成員先計（冇就 null）
 export const dinnerSummary = (date) => (d.members.length ? daySummary(date) : null);
@@ -126,6 +138,7 @@ export function renderDinner() {
       <span class="pill ${cutoff ? 'late' : ''}">${esc(cutoff ? t('cutoffPassed') : t('cutoffAt', { h: CUTOFF_HOUR }))}</span>
     </div>
     <ul class="people">${sum.rows.map((r) => personChip(r)).join('')}</ul>
+    ${offLine(today)}
     <button class="dishes-line" data-menu="${esc(today)}">${dishesLine(today)} <span class="link-btn">✏️</span></button>
     ${
       me.eats !== false
@@ -157,7 +170,7 @@ export function renderDinner() {
     const late = s.rows.some((r) => r.late);
     html += `<li class="item"><button class="toggle" data-day="${esc(date)}">
       <span class="day-label">${esc(dayLabel(date))}</span>
-      <span class="body"><span class="meta">${esc(away.length ? t('awayList', { names: away.join('、') }) : t('everyoneHome'))}${late ? ' ⚠️' : ''}</span>
+      <span class="body"><span class="meta">${esc(away.length ? t('awayList', { names: away.join('、') }) : t('everyoneHome'))}${late ? ' ⚠️' : ''}${offLine(date) ? ` · ${esc(offLine(date, true))}` : ''}</span>
         <span class="meta dishes-meta">${dishesLine(date)}</span></span>
       <b class="day-count">🍚 ${s.total}</b>
     </button><button class="icon-btn more" data-menu="${esc(date)}" aria-label="${esc(t('pickDishes'))}" title="${esc(t('pickDishes'))}">🍽</button></li>`;
@@ -189,7 +202,13 @@ function personChip(r) {
   return `<li class="person ${r.home ? '' : 'away'} ${r.late ? 'late' : ''}">
     <span>${r.home ? '✅' : '❌'} ${esc(m.name)}${r.guests ? ` <b>${esc(t('guestsN', { n: r.guests }))}</b>` : ''}</span>
     ${r.note ? `<span class="small muted">${esc(r.note)}</span>` : ''}
-    ${r.roster && !r.explicit ? `<span class="small muted">✈️ ${esc(r.member.roster?.showDest === false && r.roster !== 'SIM' ? t('rosterDuty') : r.roster)}</span>` : ''}
+    ${
+      r.roster && !r.explicit
+        ? `<span class="small muted">${
+            r.roster === 'OFF' ? `🌴 ${esc(t('rosterOffShort'))}` : `✈️ ${esc(r.member.roster?.showDest === false && r.roster !== 'SIM' ? t('rosterDuty') : r.roster)}`
+          }</span>`
+        : ''
+    }
     ${lateTxt ? `<span class="small late-txt">⚠️ ${esc(lateTxt)}</span>` : ''}
   </li>`;
 }

@@ -196,7 +196,7 @@ function renderCalendar() {
       <h3 class="cal-day-title">${esc(formatDay(cal.sel, lang))}${cal.sel === today ? ` · ${esc(t('calToday'))}` : ''}</h3>
       ${agendaHtml(cal.sel, today)}
       <button type="button" class="btn primary block cal-add" data-add-event>➕ ${esc(t('calAddEvent'))}</button>
-      <button type="button" class="btn block cal-roster" data-import-roster>✈️ ${esc(t('rosterImport'))}</button>
+      <button type="button" class="btn block cal-roster" data-import-roster>📥 ${esc(t('rosterImport'))}</button>
     </div>`;
   sheet.querySelectorAll('input[name="calmode"]').forEach(
     (r) =>

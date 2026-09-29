@@ -226,12 +226,14 @@ service cloud.firestore {
         && shortString(request.resource.data.get('by', ''), 20);
     }
 
-    // ✈️ 機師 roster（doc ID = 食飯成員 ID）：只有出門 / 返港時間同目的地機場，冇航班編號
+    // ✈️ roster（doc ID = 食飯成員 ID）：機師出門 / 返港時間同目的地機場（冇航班編號）；🌴 off = 放假日（例如姐姐）
     match /families/{familyId}/rosters/{memberId} {
       allow read, delete: if canUse(familyId);
       allow create, update: if canUse(familyId)
         && familyExists(familyId)
-        && request.resource.data.keys().hasOnly(['trips', 'reserves', 'from', 'to', 'dinner', 'commute', 'showDest', 'by', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['trips', 'reserves', 'off', 'from', 'to', 'dinner', 'commute', 'showDest', 'by', 'updatedAt'])
+        && request.resource.data.get('off', []) is list
+        && request.resource.data.get('off', []).size() <= 400
         && request.resource.data.trips is list
         && request.resource.data.trips.size() <= 200
         && request.resource.data.reserves is list
