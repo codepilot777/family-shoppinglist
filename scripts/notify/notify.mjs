@@ -25,7 +25,15 @@ const INVALID = new Set(['messaging/registration-token-not-registered', 'messagi
 let sent = 0;
 let failed = 0;
 
-for (const famRef of await db.collection('families').listDocuments()) {
+const famRefs = await db.collection('families').listDocuments();
+// 同一部機（同一個 push key）喺幾個家庭 → 通知標題加家庭名分返清楚
+const seen = new Map();
+for (const famRef of famRefs) {
+  for (const d of await famRef.collection('push').listDocuments()) seen.set(d.id, (seen.get(d.id) || 0) + 1);
+}
+const multi = new Set([...seen].filter(([, n]) => n > 1).map(([k]) => k));
+
+for (const famRef of famRefs) {
   const [membersSnap, pushSnap, dinnersSnap, rostersSnap] = await Promise.all([
     famRef.collection('members').get(),
     famRef.collection('push').get(),
@@ -56,7 +64,7 @@ for (const famRef of await db.collection('families').listDocuments()) {
   const recipes = recipesSnap ? recipesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
   const marketDays = famSnap?.data()?.marketDays || [];
   // 只發食飯通知（家務、事項、錢包喺 app 入面睇）
-  const messages = buildMessages({ mode: MODE, today, members, dinners, devices, appUrl: APP_URL, marketDays, recipes });
+  const messages = buildMessages({ mode: MODE, today, members, dinners, devices, appUrl: APP_URL, marketDays, recipes, family: { id: famRef.id, name: famSnap.data()?.name || '' }, multi });
   console.log(`family …${famRef.id.slice(-4)}: ${members.length} members, ${devices.length} devices, ${messages.length} messages`);
 
   for (const msg of messages) {
