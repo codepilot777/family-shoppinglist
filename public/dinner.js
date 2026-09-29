@@ -1,15 +1,19 @@
-// 食飯人數計算：預設跟每個成員嘅固定規律（pattern），有紀錄就用紀錄。
+// 食飯人數計算：預設跟每個成員嘅固定規律（pattern），有 ✈️ roster 就跟 roster，有紀錄就用紀錄。
 // 冇用 DOM，app 同通知 script 共用。
+import { awayAtDinner } from './roster.js';
 
 export const CUTOFF_HOUR = 16; // 下晝 4 點截數
 
 // 成員：{ id, name, proxy（由人代填，唔收通知）, eats（計唔計入人數，例如姐姐可以唔計）, pattern: [7 × bool]（0 = 星期日）}
 export const defaultPattern = () => [true, true, true, true, true, true, true];
 
+// member.roster（可以冇）：機師 roster，出勤嗰晚自動當唔返
 export function attendance(member, date, dinnerDoc, dow) {
   const rec = dinnerDoc?.att?.[member.id];
-  const home = rec ? !!rec.home : (member.pattern || defaultPattern())[dow] !== false;
+  const trip = rec ? null : awayAtDinner(member.roster, date);
+  const home = rec ? !!rec.home : trip ? false : (member.pattern || defaultPattern())[dow] !== false;
   return {
+    roster: trip ? (trip.k === 'sim' ? 'SIM' : trip.d || '✈️') : '',
     home,
     guests: rec && home ? Math.max(0, Number(rec.guests) || 0) : 0,
     note: rec?.note || '',

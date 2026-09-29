@@ -9,6 +9,7 @@ import { compressImage } from './image.js';
 import { getMembers, dinnerSummary } from './dinner-view.js';
 import { dishesLine } from './menu-view.js';
 import { choresOn } from './chores-view.js';
+import { rosterRows, rosterCount, pickRosterFile, openRosterSettings } from './roster-view.js';
 
 const PHOTO_OPTS = { maxSide: 1600, maxChars: 700_000, quality: 0.85 };
 
@@ -72,14 +73,14 @@ export function calendarOnEnterFamily(familyId) {
 const eventsOn = (date) => events.filter((e) => e.date === date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
 function marks(date, today) {
-  let n = eventsOn(date).length;
+  let n = eventsOn(date).length + rosterCount(date);
   if (shows('chores')) n += choresOn(date, today).length;
   const market = shows('dinner') && (state().family?.marketDays || []).includes(weekday(date));
   return { n, market };
 }
 
 function agendaHtml(date, today) {
-  const rows = [];
+  const rows = rosterRows(date); // ✈️ 邊個出勤 / 返港
   for (const e of eventsOn(date)) {
     const who = memberName(e.who);
     rows.push(`<li class="item cal-row"><button class="toggle" data-ev="${esc(e.id)}">
@@ -195,6 +196,7 @@ function renderCalendar() {
       <h3 class="cal-day-title">${esc(formatDay(cal.sel, lang))}${cal.sel === today ? ` · ${esc(t('calToday'))}` : ''}</h3>
       ${agendaHtml(cal.sel, today)}
       <button type="button" class="btn primary block cal-add" data-add-event>➕ ${esc(t('calAddEvent'))}</button>
+      <button type="button" class="btn block cal-roster" data-import-roster>✈️ ${esc(t('rosterImport'))}</button>
     </div>`;
   sheet.querySelectorAll('input[name="calmode"]').forEach(
     (r) =>
@@ -236,6 +238,8 @@ function onClick(e) {
   }
   if (b.dataset.ev) return openEvent(events.find((x) => x.id === b.dataset.ev));
   if (b.hasAttribute('data-add-event')) return openEvent(null, cal.sel);
+  if (b.hasAttribute('data-import-roster')) return pickRosterFile();
+  if (b.dataset.roster) return openRosterSettings(b.dataset.roster);
 }
 
 // ---------- 加 / 改事項 ----------

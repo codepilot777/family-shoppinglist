@@ -27,10 +27,11 @@ let sent = 0;
 let failed = 0;
 
 for (const famRef of await db.collection('families').listDocuments()) {
-  const [membersSnap, pushSnap, dinnersSnap] = await Promise.all([
+  const [membersSnap, pushSnap, dinnersSnap, rostersSnap] = await Promise.all([
     famRef.collection('members').get(),
     famRef.collection('push').get(),
     famRef.collection('dinners').where('__name__', '>=', today).where('__name__', '<=', addDays(today, 7)).get(),
+    famRef.collection('rosters').get(), // ✈️ 機師 roster：出勤嗰晚自動當唔返
   ]);
   if (pushSnap.empty || membersSnap.empty) continue;
 
@@ -44,7 +45,8 @@ for (const famRef of await db.collection('families').listDocuments()) {
     MODE === 'daily' ? famRef.collection('events').where('date', '==', today).get() : null,
   ]);
 
-  const members = membersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const rosters = Object.fromEntries(rostersSnap.docs.map((d) => [d.id, d.data()]));
+  const members = membersSnap.docs.map((d) => ({ id: d.id, ...d.data(), ...(rosters[d.id] ? { roster: rosters[d.id] } : {}) }));
   let devices = pushSnap.docs.map((d) => ({ key: d.id, ...d.data() }));
   // 已鎖好嘅家庭：只發俾仲有登記嘅機；被移除嘅機清走 token
   if (famSnap.data()?.joinCode) {
