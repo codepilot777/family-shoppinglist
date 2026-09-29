@@ -73,6 +73,7 @@ async function createFirebaseStore(firebaseConfig) {
   const recipesCol = (fid) => fb.collection(db, 'families', fid, 'recipes');
   const devicesCol = (fid) => fb.collection(db, 'families', fid, 'devices');
   const walletCol = (fid) => fb.collection(db, 'families', fid, 'wallet');
+  const freqCol = (fid) => fb.collection(db, 'families', fid, 'freq');
   const toMillis = (v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v ?? Date.now());
   const readDocs = (snap) =>
     snap.docs.map((d) => {
@@ -131,6 +132,24 @@ async function createFirebaseStore(firebaseConfig) {
 
     removeDevice(fid, uid) {
       return fb.deleteDoc(fb.doc(devicesCol(fid), uid));
+    },
+
+    // ---------- ⭐ 常買 ----------
+    subscribeFreq(fid, cb, onError) {
+      return fb.onSnapshot(
+        freqCol(fid),
+        (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data(), lastAt: toMillis(d.data({ serverTimestamps: 'estimate' }).lastAt) }))),
+        onError,
+      );
+    },
+
+    // 加咗一次：次數 +1（全家共用）
+    bumpFreq(fid, key, info) {
+      return fb.setDoc(fb.doc(freqCol(fid), key), { ...info, count: fb.increment(1), lastAt: fb.serverTimestamp() }, { merge: true });
+    },
+
+    deleteFreq(fid, key) {
+      return fb.deleteDoc(fb.doc(freqCol(fid), key));
     },
 
     // ---------- 💰 買餸錢包 ----------
@@ -432,6 +451,23 @@ function createLocalStore() {
 
     subscribeOwnDevice(fid, cb) {
       return watch(() => cb(!!fam(fid)?.devices?.[this.uid]));
+    },
+
+    subscribeFreq(fid, cb) {
+      return watch(() => cb(Object.entries(fam(fid)?.freq || {}).map(([id, d]) => ({ id, ...d }))));
+    },
+
+    async bumpFreq(fid, key, info) {
+      const f = fam(fid);
+      f.freq = f.freq || {};
+      const cur = f.freq[key] || { count: 0 };
+      f.freq[key] = { ...cur, ...info, count: (cur.count || 0) + 1, lastAt: Date.now() };
+      save();
+    },
+
+    async deleteFreq(fid, key) {
+      delete fam(fid).freq?.[key];
+      save();
     },
 
     subscribeWallet(fid, cb) {
