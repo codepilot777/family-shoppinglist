@@ -2,7 +2,7 @@
 import { t, langInfo } from './i18n.js';
 import { $, esc, clean, toast, fail, openDialog, confirmDialog } from './ui.js';
 import { hkToday, formatDay } from './dates.js';
-import { parseRoster, mergeRoster, awayAtDinner, rosterDay, homeBy, parseOffDays, mergeOff, DEFAULT_DINNER, DEFAULT_COMMUTE } from './roster.js';
+import { parseRoster, mergeRoster, awayAtDinner, rosterDay, homeBy, parseOffDays, mergeOff, isOff, DEFAULT_DINNER, DEFAULT_COMMUTE } from './roster.js';
 import { readXlsx, serialToDate } from './xlsx-lite.js';
 import { getMembers, myMemberId } from './dinner-view.js';
 
@@ -76,7 +76,11 @@ export function rosterRows(date) {
   return rows;
 }
 
-export const rosterCount = (date) => getMembers().reduce((n, m) => n + (m.roster ? rosterDay(m.roster, date).length : 0), 0);
+// 綠點：出勤 / 返港…（放假另外用紅點）
+export const rosterCount = (date) =>
+  getMembers().reduce((n, m) => n + (m.roster ? rosterDay(m.roster, date).filter((x) => x.kind !== 'off').length : 0), 0);
+// 🔴 紅點：有人放假（例如姐姐）
+export const anyOff = (date) => getMembers().some((m) => isOff(m.roster, date));
 
 // ---------- 匯入 ----------
 

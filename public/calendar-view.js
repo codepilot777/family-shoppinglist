@@ -9,7 +9,7 @@ import { compressImage } from './image.js';
 import { getMembers, dinnerSummary } from './dinner-view.js';
 import { dishesLine } from './menu-view.js';
 import { choresOn } from './chores-view.js';
-import { rosterRows, rosterCount, pickRosterFile, openRosterSettings } from './roster-view.js';
+import { rosterRows, rosterCount, anyOff, pickRosterFile, openRosterSettings } from './roster-view.js';
 
 const PHOTO_OPTS = { maxSide: 1600, maxChars: 700_000, quality: 0.85 };
 
@@ -76,7 +76,7 @@ function marks(date, today) {
   let n = eventsOn(date).length + rosterCount(date);
   if (shows('chores')) n += choresOn(date, today).length;
   const market = shows('dinner') && (state().family?.marketDays || []).includes(weekday(date));
-  return { n, market };
+  return { n, market, off: anyOff(date) };
 }
 
 function agendaHtml(date, today) {
@@ -149,7 +149,7 @@ function renderCalendar() {
     const m = marks(date, today);
     return `<button class="cal-day ${extraCls} ${date === today ? 'today' : ''} ${date === cal.sel ? 'sel' : ''}" data-day="${date}">
       <span class="cal-num">${dayNum(date)}</span>
-      <span class="cal-dots">${m.market ? '<i class="mk"></i>' : ''}${m.n ? `<i></i>${m.n > 1 ? '<i></i>' : ''}` : ''}</span>
+      <span class="cal-dots">${m.off ? '<i class="off"></i>' : ''}${m.market ? '<i class="mk"></i>' : ''}${m.n ? `<i></i>${m.n > 1 ? '<i></i>' : ''}` : ''}</span>
     </button>`;
   };
 
@@ -193,6 +193,7 @@ function renderCalendar() {
         ${cal.sel !== today ? `<button type="button" class="btn small-btn" data-day="${today}">${esc(t('calToday'))}</button>` : ''}
       </div>
       ${grid}
+      <p class="cal-legend small muted"><span><i class="off"></i>${esc(t('calLegendOff'))}</span><span><i class="mk"></i>${esc(t('calMarket'))}</span><span><i></i>${esc(t('calLegendOther'))}</span></p>
       <h3 class="cal-day-title">${esc(formatDay(cal.sel, lang))}${cal.sel === today ? ` · ${esc(t('calToday'))}` : ''}</h3>
       ${agendaHtml(cal.sel, today)}
       <button type="button" class="btn primary block cal-add" data-add-event>➕ ${esc(t('calAddEvent'))}</button>
