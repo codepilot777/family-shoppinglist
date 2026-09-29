@@ -196,6 +196,15 @@ export const firebaseConfig = {
 - **每月再匯入**：同一段日子會用新檔案覆蓋（換更都跟得上）；月尾出發、下個月先返嘅，匯入下個月之後會自動接駁。
 - **私隱**：只儲存出門／返港時間同目的地機場；航班編號、機型、飛行時數一律唔存。撳日曆入面嗰行可以收埋目的地、改時間設定或者清除 roster。
 
+#### 🌴 姐姐放假日（Excel 更表）
+
+同一個「匯入 roster」掣都揀得 `.xlsx`：日曆格式（每個月一張 sheet、日子下面一格寫 **OFF**）。
+
+- 揀邊個成員（預設負責煮飯嘅人），預覽每個月邊幾日放假，撳確認。
+- 只有寫「OFF」（或者 休息／放假／rest）嘅日子當放假；其他字會列出嚟，當返工。上／下個月嘅格仔以嗰個月嘅 sheet 為準。
+- **只係俾大家知**：📅 日曆顯示「🌴 Siti 放假」，食飯頁嘅今晚同未來幾日都會標「🌴 Siti 放假」。食飯人數、家務同通知全部照舊。
+- 調咗假：改好 Excel 再匯入就得（同一段日子會用新嘅）。
+
 > 要將最新 `firestore.rules` 再貼去 Firebase Console 發布，否則 roster 存唔到。
 
 ## 💰 家用（買餸錢包）
@@ -317,7 +326,8 @@ public/
   chores.js             家務排期（app 同通知 script 共用）
   calendar-view.js      📅 日曆、事項
   roster-view.js        ✈️ 匯入 roster、日曆顯示
-  roster.js             讀 roster .ics、計幾時唔喺屋企（app 同通知 script 共用）
+  roster.js             讀 roster .ics、放假日、計幾時唔喺屋企（app 同通知 script 共用）
+  xlsx-lite.js          讀 Excel（.xlsx）（唔使額外 library）
   menu-view.js          🍽 菜單、菜式庫、🧺 買餸
   menu.js               買餸日同材料計算（app 同通知 script 共用）
   recipes-seed.js       預載家常菜

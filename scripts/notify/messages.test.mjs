@@ -90,4 +90,10 @@ assert.match(msgs[0].data.url, /cal=2026-09-29$/);
 assert.equal(msgs[1].data.title, '📅 Hari ini: 10:30 Suntik');
 assert.equal(buildMessages({ mode: 'weekly', today: '2026-09-29', members, dinners, devices, appUrl, events }).filter((m) => m.data.tag === 'events').length, 0);
 
+// 🌴 姐姐放假：通知照舊（放假日只喺 app 度顯示）
+const withOff = members.map((m) => (m.id === 'siti' ? { ...m, roster: { off: ['2026-09-29'] } } : m));
+const plain = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl });
+assert.deepEqual(buildMessages({ mode: 'daily', today: '2026-09-29', members: withOff, dinners, devices, appUrl }), plain);
+assert.equal(buildMessages({ mode: 'cutoff', today: '2026-09-29', members: withOff, dinners, devices, appUrl }).length, 1);
+
 console.log('messages.test.mjs: all passed');

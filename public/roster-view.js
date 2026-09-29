@@ -1,8 +1,9 @@
-// ✈️ 匯入機師 roster（.ics）、設定、日曆顯示。
+// ✈️ 匯入 roster：機師 .ics（出勤）同 Excel 更表（例如姐姐嘅放假日）、設定、日曆顯示。
 import { t, langInfo } from './i18n.js';
 import { $, esc, clean, toast, fail, openDialog, confirmDialog } from './ui.js';
 import { hkToday, formatDay } from './dates.js';
-import { parseRoster, mergeRoster, awayAtDinner, rosterDay, homeBy, DEFAULT_DINNER, DEFAULT_COMMUTE } from './roster.js';
+import { parseRoster, mergeRoster, awayAtDinner, rosterDay, homeBy, parseOffDays, mergeOff, DEFAULT_DINNER, DEFAULT_COMMUTE } from './roster.js';
+import { readXlsx, serialToDate } from './xlsx-lite.js';
 import { getMembers, myMemberId } from './dinner-view.js';
 
 let ctx; // { state }
@@ -14,6 +15,17 @@ const fid = () => ctx.state.familyId;
 const day = (date) => formatDay(date, langInfo().htmlLang);
 const hm = (s) => (s ? s.slice(11, 16) : '');
 const dest = (r, t0) => (r?.showDest === false ? '' : t0.d);
+
+// 寫入 Firestore 嘅欄位（subscribe 返嚟嘅 id / updatedAt 唔好寫返去）
+const ROSTER_KEYS = ['trips', 'reserves', 'from', 'to', 'dinner', 'commute', 'showDest', 'off'];
+function rosterDoc(current, patch) {
+  const doc = { trips: [], reserves: [] };
+  for (const k of ROSTER_KEYS) if (current?.[k] !== undefined) doc[k] = current[k];
+  Object.assign(doc, patch);
+  if (current?.from && doc.from > current.from) doc.from = current.from;
+  if (current?.to && doc.to < current.to) doc.to = current.to;
+  return { ...doc, by: clean(ctx.state.me, 20) };
+}
 
 // ---------- 📅 日曆每日嘅行 ----------
 
@@ -51,8 +63,10 @@ export function rosterRows(date) {
         time = hm(x.reserve.s);
         text = t('rosterReserve', { name: m.name });
         meta = `${hm(x.reserve.s)}–${hm(x.reserve.e)}`;
+      } else if (x.kind === 'off') {
+        text = t('rosterOffDay', { name: m.name });
       }
-      const icon = { back: '🏠', reserve: '⏳', sim: '🛩️' }[x.kind] || '✈️';
+      const icon = { back: '🏠', reserve: '⏳', sim: '🛩️', off: '🌴' }[x.kind] || '✈️';
       rows.push(`<li class="item cal-row roster-row"><button class="toggle" data-roster="${esc(m.id)}">
         <span class="cal-time">${esc(time)}</span>
         <span class="body"><span class="name">${icon} ${esc(text.replace(/\s+·\s*$/, ''))}</span><div class="meta">${esc(meta)}</div></span>
@@ -69,12 +83,16 @@ export const rosterCount = (date) => getMembers().reduce((n, m) => n + (m.roster
 export function pickRosterFile() {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.ics,text/calendar';
+  input.accept = '.ics,.xlsx,text/calendar,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      openImport(parseRoster(await file.text()));
+      const buf = await file.arrayBuffer();
+      const head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
+      // Excel（.xlsx 係 zip，開頭係「PK」）→ 放假日；其他當 .ics
+      if (/\.xlsx$/i.test(file.name) || (head[0] === 0x50 && head[1] === 0x4b)) openImportOff(parseOffDays(await readXlsx(buf), serialToDate));
+      else openImport(parseRoster(new TextDecoder().decode(buf)));
     } catch (err) {
       console.error(err);
       toast(t('rosterBadFile'));
@@ -151,9 +169,7 @@ function openImport(parsed) {
       form.onsubmit = (e) => {
         e.preventDefault();
         const merged = preview();
-        store()
-          .setRoster(fid(), memberId, { ...merged, by: clean(ctx.state.me, 20) })
-          .catch(fail);
+        store().setRoster(fid(), memberId, rosterDoc(current(), merged)).catch(fail);
         dlg.close();
         toast(t('rosterSaved', { n: parsed.trips.length }));
       };
@@ -175,22 +191,66 @@ function readSettings(form) {
   return { dinner, commute, showDest: form.showDest.checked };
 }
 
+// 🌴 Excel 更表：放假日
+function openImportOff(parsed) {
+  const members = getMembers();
+  if (!members.length) return toast(t('rosterNeedMember'));
+  const cooks = members.filter((m) => m.eats === false);
+  let memberId = members.find((m) => m.roster?.off?.length)?.id || (cooks.length === 1 ? cooks[0].id : myMemberId() || members[0].id);
+  const byMonth = {};
+  for (const d of parsed.off) (byMonth[d.slice(0, 7)] ||= []).push(Number(d.slice(8)));
+  const monthName = (ym) => new Intl.DateTimeFormat(langInfo().htmlLang, { month: 'short', timeZone: 'UTC' }).format(new Date(`${ym}-01T00:00:00Z`));
+  const others = Object.entries(parsed.other);
+  openDialog(
+    `<form id="off-form">
+      <h2>🌴 ${esc(t('rosterImportOff'))}</h2>
+      <p class="small muted">${esc(t('rosterRange', { from: day(parsed.from), to: day(parsed.to) }))} · ${esc(t('rosterOffCount', { n: parsed.off.length }))}</p>
+      <div class="field"><span>${esc(t('rosterWho'))}</span>
+        <div class="segmented">${members
+          .map((m) => `<label><input type="radio" name="member" value="${esc(m.id)}" ${m.id === memberId ? 'checked' : ''}><span>${esc(m.name)}</span></label>`)
+          .join('')}</div></div>
+      <ul class="roster-preview small">${Object.entries(byMonth)
+        .map(([ym, days]) => `<li><b>${esc(monthName(ym))}</b> ${esc(days.join('、'))}</li>`)
+        .join('')}</ul>
+      ${others.length ? `<p class="small late-txt">${esc(t('rosterOffOther', { labels: others.map(([k, n]) => `${k}（${n}）`).join('、') }))}</p>` : ''}
+      <p class="small muted">${esc(t('rosterOffHint'))}</p>
+      <div class="actions"><span class="spacer"></span>
+        <button type="button" class="btn" data-close>${esc(t('cancel'))}</button>
+        <button class="btn primary">${esc(t('rosterConfirm'))}</button>
+      </div>
+    </form>`,
+    (dlg) => {
+      const form = $('#off-form', dlg);
+      form.querySelectorAll('input[name="member"]').forEach((r) => (r.onchange = () => (memberId = r.value)));
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        const current = getMembers().find((m) => m.id === memberId)?.roster || null;
+        const off = mergeOff(current?.off, parsed, hkToday());
+        store().setRoster(fid(), memberId, rosterDoc(current, { off, from: parsed.from, to: parsed.to })).catch(fail);
+        dlg.close();
+        toast(t('rosterOffSaved', { n: parsed.off.length }));
+      };
+    },
+  );
+}
+
 // 撳日曆入面 roster 嗰行：改設定、再匯入、清除
 export function openRosterSettings(memberId) {
   const m = getMembers().find((x) => x.id === memberId);
   const r = m?.roster;
   if (!r) return;
+  const hasDuty = !!(r.trips?.length || r.reserves?.length);
   openDialog(
     `<form id="roster-settings">
       <h2>✈️ ${esc(t('rosterOf', { name: m.name }))}</h2>
-      <p class="small muted">${esc(t('rosterRange', { from: day(r.from), to: day(r.to) }))}</p>
-      ${settingsFields(r)}
+      <p class="small muted">${esc(t('rosterRange', { from: day(r.from), to: day(r.to) }))}${r.off?.length ? ` · 🌴 ${esc(t('rosterOffCount', { n: r.off.length }))}` : ''}</p>
+      ${hasDuty ? settingsFields(r) : ''}
       <div class="actions">
         <button type="button" class="btn danger" id="roster-clear">${esc(t('rosterClear'))}</button>
         <button type="button" class="btn" id="roster-reimport">📥 ${esc(t('rosterImport'))}</button>
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>${esc(t('cancel'))}</button>
-        <button class="btn primary">${esc(t('save'))}</button>
+        ${hasDuty ? `<button class="btn primary">${esc(t('save'))}</button>` : ''}
       </div>
     </form>`,
     (dlg) => {

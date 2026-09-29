@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { parseRoster, mergeRoster, awayAtDinner, rosterDay, homeBy } from '../../public/roster.js';
+import { readFileSync } from 'node:fs';
+import { parseRoster, mergeRoster, awayAtDinner, rosterDay, homeBy, parseOffDays, mergeOff, isOff } from '../../public/roster.js';
+import { readXlsx, serialToDate } from '../../public/xlsx-lite.js';
 import { attendance } from '../../public/dinner.js';
 
 // 模擬國泰 Realtime Roster 格式（虛構資料）
@@ -86,6 +88,27 @@ assert.equal(attendance(pilot, '2026-09-02', { att: { p: { home: true } } }, 3).
 assert.equal(attendance(pilot, '2026-09-04', undefined, 5).home, true);
 assert.equal(attendance({ ...pilot, pattern: [false, false, false, false, false, false, false] }, '2026-09-04', undefined, 5).home, false);
 assert.equal(attendance(pilot, '2026-09-09', undefined, 3).roster, 'SIM');
+
+// 🌴 放假日（Excel 更表）：日曆格仔，日子下面一格寫 OFF；上 / 下個月嘅格仔由嗰個月嘅 sheet 話事
+const sheets = await readXlsx(readFileSync(new URL('./fixtures/offdays.xlsx', import.meta.url)));
+assert.deepEqual(sheets.map((x) => x.name), ['September', 'October', 'Statutory Leave']);
+const offP = parseOffDays(sheets, serialToDate);
+assert.equal(offP.from, '2026-09-01');
+assert.equal(offP.to, '2026-10-31');
+assert.deepEqual(offP.off, ['2026-09-06', '2026-09-13', '2026-09-25', '2026-10-04', '2026-10-06']);
+assert.deepEqual(offP.other, { 'Half day': 1 });
+assert.throws(() => parseOffDays([{ name: 'x', cells: new Map([['0,0', 'hello']]) }], serialToDate));
+// 再匯入 10 月：9 月嘅保留，10 月用新嘅
+const offOct = { from: '2026-10-01', to: '2026-10-31', off: ['2026-10-11'] };
+assert.deepEqual(mergeOff(offP.off, offOct, '2026-09-29'), ['2026-09-06', '2026-09-13', '2026-09-25', '2026-10-11']);
+assert.deepEqual(mergeOff(offP.off, offOct, '2027-03-01'), []);
+// 食飯：放假日照舊（只係顯示），唔會自動當唔返
+const helper = { id: 'h', name: 'Siti', eats: true, pattern: [true, true, true, true, true, true, true], roster: { off: ['2026-09-06'] } };
+assert.equal(attendance(helper, '2026-09-06', undefined, 0).home, true);
+assert.equal(attendance(helper, '2026-09-06', undefined, 0).roster, '');
+assert.ok(isOff(helper.roster, '2026-09-06') && !isOff(null, '2026-09-06'));
+assert.equal(rosterDay(helper.roster, '2026-09-06')[0].kind, 'off');
+await assert.rejects(() => readXlsx(new Uint8Array([1, 2, 3]).buffer));
 
 assert.throws(() => parseRoster('hello'));
 console.log('roster.test.mjs: all passed');
