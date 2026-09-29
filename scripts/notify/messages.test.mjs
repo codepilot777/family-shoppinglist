@@ -58,4 +58,16 @@ const plain = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinne
 assert.deepEqual(buildMessages({ mode: 'daily', today: '2026-09-29', members: withOff, dinners, devices, appUrl }), plain);
 assert.equal(buildMessages({ mode: 'cutoff', today: '2026-09-29', members: withOff, dinners, devices, appUrl }).length, 1);
 
+// 🏠 同一部機喺幾個家庭：標題加家庭名、連結帶 fam、tag 分開；淨係一個家庭就唔加
+{
+  const family = { id: 'fam0123456789abcdef', name: '哥哥屋企' };
+  const two = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, family, multi: new Set(['k1']) });
+  const dad = two.find((m) => m.key === 'k1');
+  assert.match(dad.data.title, /^哥哥屋企｜/);
+  assert.match(dad.data.url, /\?fam=fam0123456789abcdef&view=dinner$/);
+  assert.match(JSON.parse(dad.data.actions)[0].url, /\?fam=fam0123456789abcdef&view=dinner&set=/);
+  assert.equal(dad.data.tag, 'dinner-daily-abcdef');
+  assert.doesNotMatch(two.find((m) => m.key === 'k2').data.title, /哥哥屋企/);
+}
+
 console.log('messages.test.mjs: all passed');

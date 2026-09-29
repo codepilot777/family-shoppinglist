@@ -11,7 +11,7 @@ import { topFrequent, freqKey } from './freq.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
 import { compressImage, PHOTO_OPTS, THUMB_OPTS, MAX_PHOTOS } from './image.js';
-import { $, esc, ls, clean, toast, fail, timeAgo, openDialog, confirmDialog } from './ui.js';
+import { $, esc, ls, clean, toast, fail, timeAgo, openDialog, closeDialog, confirmDialog } from './ui.js';
 import { initDinner, renderDinner, dinnerOnEnterFamily, handleDinnerParams, refreshPushToken } from './dinner-view.js';
 
 // ---------- 小工具 ----------
@@ -48,6 +48,28 @@ function rememberName(name) {
   state.me = name;
   ls.set('fsl-name', name);
 }
+
+// 🏠 呢部機加入咗嘅家庭（可以幾個，例如叔叔自己屋企同返嚟食飯嘅屋企）：[{ id, name }]
+function knownFamilies() {
+  try {
+    const list = JSON.parse(ls.get('fsl-families'));
+    return Array.isArray(list) ? list.filter((f) => f && typeof f.id === 'string' && f.id) : [];
+  } catch {
+    return [];
+  }
+}
+const saveFamilies = (list) => ls.set('fsl-families', JSON.stringify(list));
+function rememberFamily(fid, name) {
+  const list = knownFamilies();
+  const f = list.find((x) => x.id === fid);
+  if (!f) saveFamilies([...list, { id: fid, name: name || '' }]);
+  else if (name && f.name !== name) {
+    f.name = name;
+    saveFamilies(list);
+  }
+}
+const forgetFamily = (fid) => saveFamilies(knownFamilies().filter((f) => f.id !== fid));
+if (state.familyId) rememberFamily(state.familyId); // 舊版只記一個家庭
 
 function changeLang(lang) {
   setLang(lang);
@@ -121,7 +143,19 @@ async function boot() {
     return;
   }
 
-  if (invite && invite !== state.familyId) return renderSetup({ invite, inviteKey });
+  // 通知 / 連結指定家庭（呢部機有加入先得）
+  const famParam = clean(params.get('fam'), 40);
+  const known = (fid) => knownFamilies().some((f) => f.id === fid) && (ls.get(codeKey(fid)) || state.store.mode === 'local');
+  if (famParam && famParam !== state.familyId && known(famParam)) {
+    state.familyId = famParam;
+    ls.set('fsl-family', famParam);
+  }
+  if (invite && invite !== state.familyId) {
+    if (state.me && known(invite)) {
+      state.familyId = invite;
+      ls.set('fsl-family', invite);
+    } else return renderSetup({ invite, inviteKey, back: state.familyId });
+  }
   if (!state.me || !state.familyId) return renderSetup({});
   enterFamily(state.familyId);
   handleDinnerParams(params);
@@ -185,16 +219,18 @@ function onListenError(err) {
   if (accessLostShown) return;
   accessLostShown = true;
   const fid = state.familyId;
+  const name = state.family?.name || '';
   resetFamily();
-  ls.set(codeKey(fid), null);
-  renderSetup({});
-  openDialog(`<h2>🔒</h2><p>${esc(t('accessLost'))}</p>
+  afterFamilyGone(fid);
+  openDialog(`<h2>🔒</h2>${name ? `<p><b>${esc(name)}</b></p>` : ''}<p>${esc(t('accessLost'))}</p>
     <div class="actions"><span class="spacer"></span><button class="btn primary" data-close>${esc(t('close'))}</button></div>`);
 }
 
 // ---------- 設定畫面（建立 / 加入家庭） ----------
 
-async function renderSetup({ invite, inviteKey } = {}) {
+// back = 本來睇緊嘅家庭（加入另一個家庭途中可以返去）
+async function renderSetup({ invite, inviteKey, back } = {}) {
+  back = back && knownFamilies().some((f) => f.id === back) ? back : null;
   const app = $('#app');
   app.className = '';
   document.title = t('appName');
@@ -207,7 +243,9 @@ async function renderSetup({ invite, inviteKey } = {}) {
   const typedName = $('#me')?.value;
   const inviteUrl = invite ? `${location.origin}${location.pathname}?f=${invite}${inviteKey ? `&k=${inviteKey}` : ''}` : '';
 
+  const backName = back ? knownFamilies().find((f) => f.id === back)?.name || t('unnamedFamily') : '';
   app.innerHTML = `<div class="setup">
+    ${back ? `<button type="button" class="btn setup-back" id="setup-back">${esc(t('backToFamily', { name: backName }))}</button>` : ''}
     <div class="field setup-lang"><span>🌐 ${esc(t('language'))}</span>${langPicker('setup-lang')}</div>
     ${
       canInstall()
@@ -256,9 +294,10 @@ async function renderSetup({ invite, inviteKey } = {}) {
   app.querySelectorAll('input[name="setup-lang"]').forEach((r) =>
     r.addEventListener('change', () => {
       changeLang(r.value);
-      renderSetup({ invite, inviteKey });
+      renderSetup({ invite, inviteKey, back });
     }),
   );
+  $('#setup-back')?.addEventListener('click', () => joinFamily(back));
 
   $('#setup-install')?.addEventListener('click', () => openInstall({ inviteLink: inviteUrl, familyId: invite ? familyCode(invite, inviteKey) : '' }));
 
@@ -289,7 +328,7 @@ async function renderSetup({ invite, inviteKey } = {}) {
     }
   };
 
-  $('#skip-invite')?.addEventListener('click', () => renderSetup({}));
+  $('#skip-invite')?.addEventListener('click', () => renderSetup({ back }));
 
   $('#join-invite')?.addEventListener('click', (e) => {
     if (!needName()) return;
@@ -320,10 +359,65 @@ async function renderSetup({ invite, inviteKey } = {}) {
 }
 
 function joinFamily(fid) {
+  if (state.familyId && state.familyId !== fid) resetFamily();
   state.familyId = fid;
   accessLostShown = false;
   ls.set('fsl-family', fid);
+  rememberFamily(fid);
   enterFamily(fid);
+}
+
+// 🏠 轉去另一個已加入嘅家庭：清走而家嘅畫面同訂閱先入
+function switchFamily(fid) {
+  if (fid === state.familyId) return;
+  closeDialog();
+  resetFamily();
+  const app = $('#app');
+  app.className = 'loading';
+  app.innerHTML = '';
+  joinFamily(fid);
+}
+
+// 加入 / 開另一個家庭（完成之後兩個都記住）
+function addAnotherFamily() {
+  const back = state.familyId;
+  closeDialog();
+  resetFamily();
+  renderSetup({ back });
+}
+
+function openFamilies() {
+  const list = knownFamilies();
+  openDialog(
+    `<h2>🏠 ${esc(t('switchFamily'))}</h2>
+    <p class="small muted">${esc(t('familiesHint'))}</p>
+    <ul class="items family-list">${list
+      .map(
+        (f) => `<li class="item"><button class="toggle" data-fam="${esc(f.id)}" aria-current="${f.id === state.familyId}">
+          <span class="body"><span class="name">${esc(f.id === state.familyId ? state.family?.name || f.name : f.name || t('unnamedFamily'))}</span></span>
+          <span class="more" aria-hidden="true">${f.id === state.familyId ? '✓' : '›'}</span></button></li>`,
+      )
+      .join('')}</ul>
+    <button type="button" class="btn block" id="add-family">${esc(t('addFamily'))}</button>
+    <div class="actions"><span class="spacer"></span><button type="button" class="btn primary" data-close>${esc(t('close'))}</button></div>`,
+    (dlg) => {
+      dlg.querySelectorAll('[data-fam]').forEach((b) => (b.onclick = () => switchFamily(b.dataset.fam)));
+      $('#add-family', dlg).onclick = addAnotherFamily;
+    },
+  );
+}
+
+// 離開 / 被移除之後：仲有其他家庭就轉過去，冇就返去開始畫面
+function afterFamilyGone(fid) {
+  forgetFamily(fid);
+  ls.set(codeKey(fid), null);
+  const next = knownFamilies()[0];
+  if (next) {
+    const app = $('#app');
+    app.className = 'loading';
+    app.innerHTML = '';
+    joinFamily(next.id);
+  } else renderSetup({});
 }
 
 function resetFamily() {
@@ -347,8 +441,8 @@ function leaveFamily() {
   // 自己離開：刪走呢部機嘅登記（之後要邀請連結先入返）
   if (fid) state.store.removeDevice(fid, state.store.uid).catch(() => {});
   resetFamily();
-  if (fid) ls.set(codeKey(fid), null);
-  renderSetup({});
+  if (fid) afterFamilyGone(fid);
+  else renderSetup({});
 }
 
 // ---------- 主畫面 ----------
@@ -395,6 +489,7 @@ function enterFamily(fid) {
       (f) => {
         state.family = f;
         fam = f;
+        if (f?.name) rememberFamily(fid, f.name);
         renderTitle();
         renderDinner(); // 買餸日設定喺 family doc
         renderWallet(); // 低餘額提醒設定都喺 family doc
@@ -522,7 +617,7 @@ function renderShell() {
   app.className = '';
   app.innerHTML = `
     <header class="topbar">
-      <h1 id="family-title"></h1>
+      <h1><button type="button" class="family-switch" id="family-switch" title="${esc(t('switchFamily'))}"><span id="family-title"></span><span class="fam-caret" aria-hidden="true">${knownFamilies().length > 1 ? '⇅' : '▾'}</span></button></h1>
       <span class="offline ${navigator.onLine ? 'hidden' : ''}" id="offline">${esc(t('offline'))}</span>
       ${canInstall() ? `<button class="icon-btn" id="install-btn" aria-label="${esc(t('install'))}" title="${esc(t('install'))}">📲</button>` : ''}
       <button class="icon-btn" id="cal-btn" aria-label="${esc(t('calendar'))}" title="${esc(t('calendar'))}">📅</button>
@@ -564,6 +659,7 @@ function renderShell() {
     </div>`;
 
   renderTitle();
+  $('#family-switch').onclick = openFamilies;
   $('#invite-btn').onclick = openInvite;
   $('#cal-btn').onclick = () => openCalendar();
   $('#install-btn')?.addEventListener('click', () => openInstall({ inviteLink: inviteLink(), familyId: state.familyId }));

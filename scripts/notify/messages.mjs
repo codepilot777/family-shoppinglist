@@ -74,9 +74,11 @@ function summaryBody(tx, sum) {
  * @param marketDays 買餸日 [0..6]（冇設定就唔提）
  * @param recipes 菜式庫（計今日買餸要幾多樣材料）
  * 只發食飯相關嘅通知（問卷、今晚確認、煮飯人數、截數）；家務、事項、錢包喺 app 入面睇就得
+ * @param family { id, name }：連結帶 ?fam= 開返啱嘅家庭；tag 分開唔同家庭
+ * @param multi 同時屬於幾個家庭嘅機（push key）→ 標題前面加家庭名
  * @returns [{ key, token, data: { title, body, url, tag, actions } }]
  */
-export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [] }) {
+export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [], family = null, multi = new Set() }) {
   const out = [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const tonight = summarize(members, today, dinners[today], weekday(today));
@@ -91,9 +93,10 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
     if (!m || m.proxy) continue;
     const lang = TEXT[dev.lang] ? dev.lang : 'zh';
     const tx = TEXT[lang];
-    const url = (q) => `${appUrl}?${q}`;
-    const push = (data) =>
-      out.push({ key: dev.key, token: dev.token, data: { tag: `dinner-${mode}`, actions: '[]', ...data } });
+    const url = (q) => `${appUrl}?${family?.id ? `fam=${encodeURIComponent(family.id)}&` : ''}${q}`;
+    const prefix = family?.name && multi.has(dev.key) ? `${family.name}｜` : '';
+    const tag = `dinner-${mode}${family?.id ? `-${family.id.slice(-6)}` : ''}`;
+    const push = (data) => out.push({ key: dev.key, token: dev.token, data: { tag, actions: '[]', ...data, title: prefix + data.title } });
 
     const eats = m.eats !== false;
     if (mode === 'weekly') {

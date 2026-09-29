@@ -56,6 +56,7 @@ export function openDialog(html, setup) {
   dialog.showModal();
   dialog.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => dialog.close()));
 }
+export const closeDialog = () => dialog.open && dialog.close();
 dialog.addEventListener('click', (e) => {
   if (e.target === dialog) dialog.close();
 });
