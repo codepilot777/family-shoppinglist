@@ -89,15 +89,11 @@ export function dinnerOnEnterFamily(familyId) {
   return [unsubMembers, unsubRosters, subscribeRecipes(familyId), () => d.unsubDinners?.()];
 }
 
-// 🌴 邊個放假（例如姐姐）；負責煮飯嘅人放假就提大家冇人煮
-const offMembers = (date) => d.members.filter((m) => isOff(m.roster, date));
+// 🌴 邊個放假（例如姐姐）：只係俾大家知，其他照舊
 function offLine(date, short = false) {
-  const off = offMembers(date);
-  if (!off.length) return '';
-  const names = off.map((m) => m.name).join('、');
-  const cook = off.some((m) => m.eats === false);
-  if (short) return `🌴 ${t('rosterOffList', { names })}`;
-  return `<p class="off-line ${cook ? 'late-txt' : 'muted'} small">🌴 ${esc(t(cook ? 'rosterOffNoCook' : 'rosterOffList', { names }))}</p>`;
+  const names = d.members.filter((m) => isOff(m.roster, date)).map((m) => m.name).join('、');
+  if (!names) return '';
+  return short ? `🌴 ${t('rosterOffList', { names })}` : `<p class="off-line muted small">🌴 ${esc(t('rosterOffList', { names }))}</p>`;
 }
 
 const daySummary = (date) => summarize(d.members, date, d.dinners[date], weekday(date));
@@ -204,9 +200,7 @@ function personChip(r) {
     ${r.note ? `<span class="small muted">${esc(r.note)}</span>` : ''}
     ${
       r.roster && !r.explicit
-        ? `<span class="small muted">${
-            r.roster === 'OFF' ? `🌴 ${esc(t('rosterOffShort'))}` : `✈️ ${esc(r.member.roster?.showDest === false && r.roster !== 'SIM' ? t('rosterDuty') : r.roster)}`
-          }</span>`
+        ? `<span class="small muted">✈️ ${esc(r.member.roster?.showDest === false && r.roster !== 'SIM' ? t('rosterDuty') : r.roster)}</span>`
         : ''
     }
     ${lateTxt ? `<span class="small late-txt">⚠️ ${esc(lateTxt)}</span>` : ''}

@@ -65,7 +65,6 @@ export function rosterRows(date) {
         meta = `${hm(x.reserve.s)}–${hm(x.reserve.e)}`;
       } else if (x.kind === 'off') {
         text = t('rosterOffDay', { name: m.name });
-        meta = m.eats === false ? t('rosterOffCook') : '';
       }
       const icon = { back: '🏠', reserve: '⏳', sim: '🛩️', off: '🌴' }[x.kind] || '✈️';
       rows.push(`<li class="item cal-row roster-row"><button class="toggle" data-roster="${esc(m.id)}">

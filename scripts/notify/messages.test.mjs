@@ -90,14 +90,10 @@ assert.match(msgs[0].data.url, /cal=2026-09-29$/);
 assert.equal(msgs[1].data.title, '📅 Hari ini: 10:30 Suntik');
 assert.equal(buildMessages({ mode: 'weekly', today: '2026-09-29', members, dinners, devices, appUrl, events }).filter((m) => m.data.tag === 'events').length, 0);
 
-// 🌴 姐姐放假：唔發煮飯人數 / 截數俾佢；其他人朝早通知講「冇人煮飯」
-const withOff = members.map((m) => (m.id === 'siti' ? { ...m, roster: { off: ['2026-09-27', '2026-09-29'] } } : m));
-msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members: withOff, dinners, devices, appUrl });
-assert.ok(!msgs.some((m) => m.key === 'k3'), 'no cook push on her day off');
-assert.match(msgs.find((m) => m.key === 'k1').data.body, /🌴 今日Siti放假，冇人煮飯/);
-assert.match(msgs.find((m) => m.key === 'k2').data.body, /Siti is off today — nobody is cooking/);
-assert.equal(buildMessages({ mode: 'cutoff', today: '2026-09-29', members: withOff, dinners, devices, appUrl }).length, 0);
-msgs = buildMessages({ mode: 'daily', today: '2026-09-30', members: withOff, dinners, devices, appUrl });
-assert.ok(msgs.some((m) => m.key === 'k3') && !msgs.find((m) => m.key === 'k1').data.body.includes('🌴'));
+// 🌴 姐姐放假：通知照舊（放假日只喺 app 度顯示）
+const withOff = members.map((m) => (m.id === 'siti' ? { ...m, roster: { off: ['2026-09-29'] } } : m));
+const plain = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl });
+assert.deepEqual(buildMessages({ mode: 'daily', today: '2026-09-29', members: withOff, dinners, devices, appUrl }), plain);
+assert.equal(buildMessages({ mode: 'cutoff', today: '2026-09-29', members: withOff, dinners, devices, appUrl }).length, 1);
 
 console.log('messages.test.mjs: all passed');

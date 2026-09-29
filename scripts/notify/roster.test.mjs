@@ -102,12 +102,10 @@ assert.throws(() => parseOffDays([{ name: 'x', cells: new Map([['0,0', 'hello']]
 const offOct = { from: '2026-10-01', to: '2026-10-31', off: ['2026-10-11'] };
 assert.deepEqual(mergeOff(offP.off, offOct, '2026-09-29'), ['2026-09-06', '2026-09-13', '2026-09-25', '2026-10-11']);
 assert.deepEqual(mergeOff(offP.off, offOct, '2027-03-01'), []);
-// 食飯：放假嗰晚出咗街；自己改過就跟紀錄
+// 食飯：放假日照舊（只係顯示），唔會自動當唔返
 const helper = { id: 'h', name: 'Siti', eats: true, pattern: [true, true, true, true, true, true, true], roster: { off: ['2026-09-06'] } };
-assert.equal(attendance(helper, '2026-09-06', undefined, 0).home, false);
-assert.equal(attendance(helper, '2026-09-06', undefined, 0).roster, 'OFF');
-assert.equal(attendance(helper, '2026-09-06', { att: { h: { home: true } } }, 0).home, true);
-assert.equal(attendance(helper, '2026-09-07', undefined, 1).home, true);
+assert.equal(attendance(helper, '2026-09-06', undefined, 0).home, true);
+assert.equal(attendance(helper, '2026-09-06', undefined, 0).roster, '');
 assert.ok(isOff(helper.roster, '2026-09-06') && !isOff(null, '2026-09-06'));
 assert.equal(rosterDay(helper.roster, '2026-09-06')[0].kind, 'off');
 await assert.rejects(() => readXlsx(new Uint8Array([1, 2, 3]).buffer));

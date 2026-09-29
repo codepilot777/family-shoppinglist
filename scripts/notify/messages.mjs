@@ -3,7 +3,6 @@ import { weekday, nextWeekStart, weekDates, formatDay } from '../../public/dates
 import { attendance, summarize } from '../../public/dinner.js';
 import { marketWindow, collectIngredients } from '../../public/menu.js';
 import { dueToday } from '../../public/chores.js';
-import { isOff } from '../../public/roster.js';
 import { DICT_INDEX } from '../../public/dictionary.js';
 
 const LOCALES = { zh: 'zh-Hant-HK', en: 'en', id: 'id' };
@@ -27,8 +26,6 @@ const TEXT = {
     walletBody: '低過 {limit}，記得入錢。',
     choresTitle: '🧹 今日家務（{n} 樣）',
     eventsTitle: '📅 今日：{what}',
-    offNoCook: '\n🌴 今日{names}放假，冇人煮飯',
-    offList: '\n🌴 今日{names}放假',
     allDay: '全日',
     late: '（遲咗）',
     sep: '、',
@@ -51,8 +48,6 @@ const TEXT = {
     walletBody: 'Below {limit} — remember to top up.',
     choresTitle: '🧹 Chores today ({n})',
     eventsTitle: '📅 Today: {what}',
-    offNoCook: '\n🌴 {names} is off today — nobody is cooking',
-    offList: '\n🌴 {names} is off today',
     allDay: 'all day',
     late: ' (late)',
     sep: ', ',
@@ -75,8 +70,6 @@ const TEXT = {
     walletBody: 'Di bawah {limit} — jangan lupa diisi.',
     choresTitle: '🧹 Tugas hari ini ({n})',
     eventsTitle: '📅 Hari ini: {what}',
-    offNoCook: '\n🌴 {names} libur hari ini — tidak ada yang masak',
-    offList: '\n🌴 {names} libur hari ini',
     allDay: 'seharian',
     late: ' (terlambat)',
     sep: ', ',
@@ -116,9 +109,6 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
   const win = marketDays.length ? marketWindow(today, marketDays) : null;
   const toBuy = win?.isMarketDay ? collectIngredients(win.dates, dinners, recipes).filter((x) => !x.staple).length : 0;
   const choresDue = mode === 'daily' ? dueToday(chores, today) : [];
-  // 🌴 今日放假嘅人（例如姐姐）：唔發「煮飯人數」俾佢；其他人嘅朝早通知講一聲
-  const offToday = members.filter((m) => isOff(m.roster, today));
-  const offCook = offToday.some((m) => m.eats === false);
   const eventsToday = mode === 'daily' ? events.filter((e) => e.date === today).sort((a, b) => (a.time || '').localeCompare(b.time || '')) : [];
 
   for (const dev of devices) {
@@ -188,21 +178,20 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
             },
           });
         }
-        const offNames = offToday.filter((o) => o.id !== m.id).map((o) => o.name);
         push({
           title: tx.dailyTitle,
-          body: (a.home ? tx.dailyHome : tx.dailyAway) + (offNames.length ? fill(offCook ? tx.offNoCook : tx.offList, { names: offNames.join(tx.sep) }) : ''),
+          body: a.home ? tx.dailyHome : tx.dailyAway,
           url: url('view=dinner'),
           actions: JSON.stringify([
             { action: flip, title: a.home ? tx.toAway : tx.toHome, url: url(`view=dinner&set=${flip}&date=${today}&m=${m.id}`) },
           ]),
         });
-      } else if (!isOff(m.roster, today)) {
+      } else {
         const body = summaryBody(tx, tonight) + (toBuy ? fill(tx.market, { n: toBuy }) : '');
         push({ title: fill(tx.cookMorningTitle, { n: tonight.total }), body, url: url('view=dinner') });
       }
     } else if (mode === 'cutoff') {
-      if (eats || isOff(m.roster, today)) continue; // 截數人數只發俾負責煮飯嘅人（放假就唔發）
+      if (eats) continue; // 截數人數只發俾負責煮飯嘅人
       push({ title: fill(tx.cutoffTitle, { n: tonight.total }), body: summaryBody(tx, tonight), url: url('view=dinner') });
     }
   }

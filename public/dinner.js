@@ -1,6 +1,6 @@
 // 食飯人數計算：預設跟每個成員嘅固定規律（pattern），有 ✈️ roster 就跟 roster，有紀錄就用紀錄。
 // 冇用 DOM，app 同通知 script 共用。
-import { awayAtDinner, isOff } from './roster.js';
+import { awayAtDinner } from './roster.js';
 
 export const CUTOFF_HOUR = 16; // 下晝 4 點截數
 
@@ -11,10 +11,9 @@ export const defaultPattern = () => [true, true, true, true, true, true, true];
 export function attendance(member, date, dinnerDoc, dow) {
   const rec = dinnerDoc?.att?.[member.id];
   const trip = rec ? null : awayAtDinner(member.roster, date);
-  const off = !rec && !trip && isOff(member.roster, date); // 🌴 放假日（例如姐姐）：出咗街
-  const home = rec ? !!rec.home : trip || off ? false : (member.pattern || defaultPattern())[dow] !== false;
+  const home = rec ? !!rec.home : trip ? false : (member.pattern || defaultPattern())[dow] !== false;
   return {
-    roster: trip ? (trip.k === 'sim' ? 'SIM' : trip.d || '✈️') : off ? 'OFF' : '',
+    roster: trip ? (trip.k === 'sim' ? 'SIM' : trip.d || '✈️') : '',
     home,
     guests: rec && home ? Math.max(0, Number(rec.guests) || 0) : 0,
     note: rec?.note || '',
