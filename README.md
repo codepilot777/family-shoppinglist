@@ -14,6 +14,7 @@
 - **📷 相片**：影低包裝／截圖，買嘅人唔會買錯
 - **🎁 想買清單**：旅行、網購、「見到就幫我買」嘅嘢，有相、價錢、連結，按「幫邊個買」分組
 - **🍚 食飯**：今晚幾多人喺屋企食飯；星期日問卷、每朝確認（唔覆當冇改）、4pm 截數，自動通知 + WhatsApp 後備
+- **💰 家用**：買餸錢包餘額、記支出（連單據相）、入錢前對數、每月總結，每日自動匯出去 NAS
 - **🍽 菜單 + 🧺 買餸**：預先揀每晚菜式；到咗買餸日自動計出要買咩（附建議份量同人數），一撳加入購物清單
 - 免費：GitHub Pages + Firebase 免費方案（屋企用綽綽有餘）
 
@@ -138,6 +139,52 @@ export const firebaseConfig = {
 
 > GitHub 定時工作有時會遲 10–30 分鐘。repo 60 日冇改動，GitHub 會暫停定時工作，會 email 通知你，撳一下就恢復。
 
+## 💰 家用（買餸錢包）
+
+撳頂部「💰 家用」：
+
+- **餘額**：買餸錢包應該仲有幾多（入錢 − 支出 ± 對數差額），同埋上次邊個幾時入錢。
+- **➖ 記支出**：
+  - 入銀碼，揀喺邊度買（街市、超市…）
+  - 姐姐 12 個鐘內剔咗「已買」嘅貨品會自動列出，一齊記低；已經記入另一筆嘅唔會再出
+  - 可以影最多 3 張單據，亦可以寫備註
+- **➕ 入錢**：入錢之前先**數一數錢包實際有幾多**。同紀錄唔一樣，就會記低「對數差額」同原因，之後再入新嘅錢。
+- **每月總結**：用咗幾多、買咗幾多次、入咗幾多、按地方分；撳 ‹ › 睇其他月份。撳任何一筆可以睇單據、改或者刪除。
+- **📤 匯出 CSV**：Excel 開得。
+- **⚙️ 低餘額提醒**：錢包低過設定嘅數（預設 $200），朝早 8 點會通知食飯成員入錢（要開咗通知）。
+
+### 自動匯出去 NAS
+
+NAS 每日自己去 Firebase 攞資料，存喺 NAS 入面：
+```
+home-hub/我哋屋企-ab12/
+  wallet-all.csv                 全部家用紀錄
+  wallet/2026-09.csv             每月一個檔
+  receipts/2026-09-28_街市_218.50_1.jpg
+  photos/…jpg                    貨品相
+  backup/*.json                  所有資料嘅完整備份（清單、食飯、菜式、家用…）
+```
+已經下載咗嘅相唔會再下載。唔會匯出邀請代碼同通知 token。
+
+**設定（Synology 為例，其他 NAS 差唔多）**
+
+1. **Service account 檔**：用返「開通知」嗰個 `.json`，或者喺 Firebase Console → ⚙️ 專案設定 → 服務帳戶 → 產生新的私密金鑰。放喺 NAS 一個只有你睇到嘅位置，例如 `/volume1/homes/你/home-hub-sa.json`。
+2. **程式**：喺 GitHub 撳 Code → Download ZIP，解壓去 NAS，例如 `/volume1/homes/你/family-shoppinglist`。有更新時再下載一次覆蓋就得。
+3. **Docker**：套件中心安裝 **Container Manager**（冇 Docker 嘅話，就安裝 **Node.js v20** 套件）。
+4. **每日自動行**：控制台 → 工作排程 → 新增 → 排程的工作 → 使用者定義的指令碼：
+   - 使用者：`root`（Docker 需要）
+   - 排程：每日，例如凌晨 3:00
+   - 指令碼：
+     ```sh
+     sh /volume1/homes/你/family-shoppinglist/scripts/export/run-on-nas.sh \
+        /volume1/homes/你/family-shoppinglist \
+        /volume1/homes/你/home-hub-sa.json \
+        /volume1/backup/home-hub
+     ```
+5. 撳「執行」試一次，睇下 `/volume1/backup/home-hub` 有冇檔案。
+
+> 資料係由 NAS 主動去攞，唔使開任何 port，亦唔使將 NAS 放上網。
+
 ## 安全性同 📱 已連接嘅機
 
 - 每部機（每部手機、每個瀏覽器，包括 iPhone 主畫面 app）都要用**邀請連結或者家庭代碼登記**，先讀寫到屋企資料。冇人可以列出所有家庭。
@@ -195,6 +242,8 @@ public/
   install.js            📲 安裝到主畫面
   devices-view.js       📱 已連接嘅機、換邀請代碼
   update.js             🔄 新版本提示
+  wallet-view.js        💰 家用
+  wallet.js             家用計數、CSV（app、通知、NAS 匯出共用）
   menu-view.js          🍽 菜單、菜式庫、🧺 買餸
   menu.js               買餸日同材料計算（app 同通知 script 共用）
   recipes-seed.js       預載家常菜
@@ -203,5 +252,6 @@ public/
   vendor/firebase.js    Firebase SDK
 firestore.rules         Firestore 安全規則
 scripts/notify/         食飯通知 script（GitHub Actions 定時執行）
+scripts/export/         匯出去 NAS（家用 CSV、單據相、完整備份）
 .github/workflows/      自動發佈到 GitHub Pages、定時發通知
 ```

@@ -20,6 +20,8 @@ const TEXT = {
     everyoneHome: '全部返',
     guests: '（包括 {n} 位客）',
     market: '\n🧺 今日買餸：{n} 樣材料，打開 app 睇',
+    walletTitle: '💰 買餸錢包得返 {amount}',
+    walletBody: '低過 {limit}，記得入錢。',
     sep: '、',
   },
   en: {
@@ -36,6 +38,8 @@ const TEXT = {
     everyoneHome: 'Everyone home',
     guests: ' (incl. {n} guest(s))',
     market: '\n🧺 Shopping day: {n} ingredient(s) — open the app',
+    walletTitle: '💰 Grocery wallet has {amount} left',
+    walletBody: 'Below {limit} — remember to top up.',
     sep: ', ',
   },
   id: {
@@ -52,10 +56,13 @@ const TEXT = {
     everyoneHome: 'Semua di rumah',
     guests: ' (termasuk {n} tamu)',
     market: '\n🧺 Hari belanja: {n} bahan — buka aplikasi',
+    walletTitle: '💰 Uang belanja tinggal {amount}',
+    walletBody: 'Di bawah {limit} — jangan lupa diisi.',
     sep: ', ',
   },
 };
 
+const money = (c) => `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toLocaleString('en', { maximumFractionDigits: 2 })}`;
 const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
 
 function summaryBody(tx, sum) {
@@ -73,9 +80,10 @@ function summaryBody(tx, sum) {
  * @param appUrl 'https://…/family-shoppinglist/'
  * @param marketDays 買餸日 [0..6]（冇設定就唔提）
  * @param recipes 菜式庫（計今日買餸要幾多樣材料）
+ * @param wallet { balance, low }（仙；冇紀錄就 null）
  * @returns [{ key, token, data: { title, body, url, tag, actions } }]
  */
-export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [] }) {
+export function buildMessages({ mode, today, members, dinners, devices, appUrl, marketDays = [], recipes = [], wallet = null }) {
   const out = [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const tonight = summarize(members, today, dinners[today], weekday(today));
@@ -103,6 +111,20 @@ export function buildMessages({ mode, today, members, dinners, devices, appUrl, 
       if (eats) {
         const a = attendance(m, today, dinners[today], weekday(today));
         const flip = a.home ? 'away' : 'home';
+        // 錢包就嚟用完：提醒食飯成員（即係俾錢嗰啲人）入錢
+        if (wallet && wallet.balance < wallet.low) {
+          out.push({
+            key: dev.key,
+            token: dev.token,
+            data: {
+              tag: 'wallet-low',
+              actions: '[]',
+              title: fill(tx.walletTitle, { amount: money(wallet.balance) }),
+              body: fill(tx.walletBody, { limit: money(wallet.low) }),
+              url: url('view=wallet'),
+            },
+          });
+        }
         push({
           title: tx.dailyTitle,
           body: a.home ? tx.dailyHome : tx.dailyAway,

@@ -45,4 +45,14 @@ msgs = buildMessages({ mode: 'cutoff', today: '2026-09-29', members, dinners, de
 assert.deepEqual(msgs.map((m) => m.key), ['k3']);
 assert.ok(Object.values(msgs[0].data).every((v) => typeof v === 'string'), 'FCM data values must be strings');
 
+// 錢包低過提醒：只發俾食飯成員（俾錢嗰啲），唔發俾負責煮飯嘅人
+msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, wallet: { balance: 15050, low: 20000 } });
+const lowMsgs = msgs.filter((m) => m.data.tag === 'wallet-low');
+assert.deepEqual(lowMsgs.map((m) => m.key), ['k1', 'k2']);
+assert.equal(lowMsgs[0].data.title, '💰 買餸錢包得返 $150.5');
+assert.match(lowMsgs[1].data.body, /Below \$200/);
+assert.match(lowMsgs[0].data.url, /view=wallet/);
+msgs = buildMessages({ mode: 'daily', today: '2026-09-29', members, dinners, devices, appUrl, wallet: { balance: 50000, low: 20000 } });
+assert.equal(msgs.filter((m) => m.data.tag === 'wallet-low').length, 0);
+
 console.log('messages.test.mjs: all passed');

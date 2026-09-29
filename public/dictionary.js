@@ -207,6 +207,7 @@ export const DICTIONARY = [
   ['📷 相片', '📷 Photo', '📷 Foto', 'other'],
 
   // 清單名（地方）
+  ['其他', 'Other', 'Lainnya', 'other'],
   ['超市|超級市場', 'Supermarket', 'Supermarket', 'other'],
   ['街市', 'Wet market', 'Pasar', 'other'],
   ['藥房', 'Pharmacy', 'Apotek', 'other'],

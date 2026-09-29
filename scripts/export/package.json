@@ -1,0 +1,9 @@
+{
+  "name": "home-hub-export",
+  "private": true,
+  "type": "module",
+  "description": "將屋企通資料匯出去 NAS（家用 CSV、單據相、完整備份）",
+  "dependencies": {
+    "firebase-admin": "^14.5.0"
+  }
+}

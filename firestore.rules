@@ -33,7 +33,9 @@ service cloud.firestore {
       return isDevice(familyId) || (signedIn() && isLegacy(familyId));
     }
     function validFamily() {
-      return request.resource.data.keys().hasOnly(['name', 'createdAt', 'marketDays', 'marketListId', 'joinCode'])
+      return request.resource.data.keys().hasOnly(['name', 'createdAt', 'marketDays', 'marketListId', 'joinCode', 'walletLow'])
+        && request.resource.data.get('walletLow', 0) is int
+        && request.resource.data.get('walletLow', 0) >= 0
         && shortString(request.resource.data.name, 30)
         && request.resource.data.name.size() > 0
         && request.resource.data.get('marketDays', []) is list
@@ -115,7 +117,7 @@ service cloud.firestore {
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(['data', 'createdAt'])
         && request.resource.data.data is string
-        && request.resource.data.data.size() <= 400000
+        && request.resource.data.data.size() <= 750000
         && request.resource.data.data.matches('^data:image/jpeg;base64,.*');
     }
 
@@ -161,6 +163,30 @@ service cloud.firestore {
         && request.resource.data.get('trAuto', {}) is map
         && request.resource.data.get('ingredients', []) is list
         && request.resource.data.get('ingredients', []).size() <= 40;
+    }
+
+    // 💰 買餸錢包：每筆入錢 / 支出 / 對數差額（銀碼用「仙」做整數）
+    match /families/{familyId}/wallet/{entryId} {
+      allow read, delete: if canUse(familyId);
+      allow create, update: if canUse(familyId)
+        && familyExists(familyId)
+        && request.resource.data.keys().hasOnly(
+             ['type', 'amount', 'date', 'by', 'place', 'note', 'items', 'receipts', 'expected', 'counted', 'createdAt', 'editedBy'])
+        && request.resource.data.type in ['topup', 'expense', 'adjust']
+        && request.resource.data.amount is int
+        && request.resource.data.amount >= -100000000
+        && request.resource.data.amount <= 100000000
+        && (request.resource.data.type == 'adjust' || request.resource.data.amount >= 0)
+        && request.resource.data.date is string
+        && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && shortString(request.resource.data.get('by', ''), 20)
+        && shortString(request.resource.data.get('editedBy', ''), 20)
+        && shortString(request.resource.data.get('place', ''), 30)
+        && shortString(request.resource.data.get('note', ''), 200)
+        && request.resource.data.get('items', []) is list
+        && request.resource.data.get('items', []).size() <= 60
+        && request.resource.data.get('receipts', []) is list
+        && request.resource.data.get('receipts', []).size() <= 3;
     }
 
     // 通知：每部機一個 FCM token（由 GitHub Actions 讀取再發通知）
