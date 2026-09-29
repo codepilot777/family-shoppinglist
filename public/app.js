@@ -446,6 +446,7 @@ function renderShell() {
     <div id="shop-view">
     <nav class="tabs" id="tabs" role="tablist" aria-label="${esc(t('lists'))}"></nav>
     <div class="shop-tools">
+      <span class="shop-title" id="shop-title"></span>
       <button type="button" class="btn shop-start" id="shop-start">${esc(t('shopStart'))}</button>
     </div>
     <div id="freq" class="freq-row"></div>
@@ -539,6 +540,7 @@ function render() {
 
   $('#add-form')?.classList.toggle('hidden', !state.listId);
   renderFreq();
+  renderShopBar();
   const list0 = currentList();
   const addName = $('#add-name');
   if (addName) addName.placeholder = isWish(list0) ? t('wishPlaceholder') : t('addPlaceholder');
@@ -596,7 +598,7 @@ function itemRow(i) {
         i.price && `<span class="price">${esc(i.price)}</span>`,
         i.note && esc(i.note),
         !wish && i.forWho && esc(`🙋 ${t('forWhoLabel', { name: i.forWho })}`),
-        i.addedBy && esc(t('addedBy', { name: i.addedBy })),
+        !shopping.on && i.addedBy && esc(t('addedBy', { name: i.addedBy })), // 買嘢模式唔使睇邊個加
       ]
         .filter(Boolean)
         .join(' · ');
@@ -727,16 +729,18 @@ function startShopping() {
   shopping.since = Date.now();
   document.body.classList.add('shopping-mode');
   keepAwake();
-  renderShopBar();
+  render();
+  window.scrollTo(0, 0);
 }
 
 function stopShopping() {
-  const bought = state.items.filter((i) => i.done && i.doneBy === state.me && (i.doneAt || 0) >= shopping.since).length;
+  // 伺服器時間同部機時間可能差少少，放寬一分鐘
+  const bought = state.items.filter((i) => i.done && i.doneBy === state.me && (i.doneAt || 0) >= shopping.since - 60_000).length;
   shopping.on = false;
   shopping.lock?.release().catch(() => {});
   shopping.lock = null;
   document.body.classList.remove('shopping-mode');
-  renderShopBar();
+  render();
   if (bought) {
     openDialog(
       `<h2>🛒 ${esc(t('shopRecordPrompt', { n: bought }))}</h2>
@@ -759,8 +763,16 @@ function stopShopping() {
 function renderShopBar() {
   const btn = $('#shop-start');
   if (!btn) return;
-  btn.textContent = shopping.on ? `${t('shopMode')} · ${t('shopDone')}` : t('shopStart');
+  btn.textContent = shopping.on ? t('shopDone') : t('shopStart');
   btn.classList.toggle('primary', shopping.on);
+  // 買嘢模式：頂部淨係顯示清單名 + 剔咗幾多
+  const title = $('#shop-title');
+  if (!title) return;
+  const items = state.items.filter((i) => i.listId === state.listId);
+  const list0 = currentList();
+  title.innerHTML = shopping.on && list0
+    ? `<b>${esc(listLabel(list0))}</b><span>${esc(t('shopProgress', { done: items.filter((i) => i.done).length, total: items.length }))}</span>`
+    : '';
 }
 
 // 加一樣嘢入目前清單（已經有未買 → 提示；之前買過 → 放返入未買）；回傳 'dup' | 'readded' | 'added'
