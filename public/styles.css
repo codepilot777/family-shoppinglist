@@ -160,6 +160,20 @@ button { cursor: pointer; }
 .item .meta { font-size: 0.8125rem; color: var(--muted); overflow-wrap: anywhere; }
 .item.done .name { text-decoration: line-through; color: var(--muted); }
 .item.done .qty { background: var(--surface-2); color: var(--muted); }
+.qty-btn {
+  flex: none; min-height: 2.25rem; margin-right: 0.25rem; padding: 0 0.625rem; border-radius: 99px;
+  border: 1px solid var(--line); background: var(--accent-soft); color: var(--text); font: inherit; font-size: 0.875rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.item.partial .qty-btn { border-color: #d97706; background: none; color: #d97706; }
+.item .got { color: #d97706; font-weight: 600; }
+.got-bar { display: block; height: 4px; margin: 0.25rem 0 0.125rem; border-radius: 99px; background: var(--surface-2); overflow: hidden; max-width: 10rem; }
+.got-bar i { display: block; height: 100%; background: #d97706; }
+.partial-row { align-items: center; margin: 0.5rem 0 0.75rem; }
+.partial-row { flex-wrap: nowrap; }
+.partial-row > * { flex: none; }
+.partial-row .icon-square { width: 3rem; padding: 0; font-size: 1.375rem; }
+.partial-input { width: 6rem; font-size: 1.5rem; text-align: center; }
+.partial-unit { font-size: 1.125rem; color: var(--muted); white-space: nowrap; }
 .item .more { flex: none; color: var(--muted); margin-right: 0.375rem; }
 
 .done-head { display: flex; align-items: center; justify-content: space-between; margin: 1.375rem 0.25rem 0.375rem; }
@@ -477,6 +491,7 @@ body.shopping-mode .item .toggle { gap: 1rem; padding: 1.25rem 0.75rem 1.25rem 1
 body.shopping-mode .item .check { width: 2.75rem; height: 2.75rem; font-size: 1.5rem; border-width: 3px; }
 body.shopping-mode .item .name { font-size: 1.5rem; font-weight: 600; line-height: 1.25; }
 body.shopping-mode .item .qty { font-size: 1.125rem; padding: 0.125rem 0.625rem; vertical-align: 3px; }
+body.shopping-mode .qty-btn { min-height: 3rem; font-size: 1.125rem; padding: 0 0.875rem; }
 body.shopping-mode .item .original { font-size: 1.0625rem; }
 body.shopping-mode .item .meta { font-size: 1rem; }
 body.shopping-mode .item .thumb-btn { width: 4.5rem; height: 4.5rem; margin-right: 0.75rem; }

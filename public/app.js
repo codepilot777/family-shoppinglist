@@ -8,6 +8,7 @@ import { initDues, duesOnEnterFamily, renderDues } from './dues-view.js';
 import { initCalendar, calendarOnEnterFamily, openCalendar } from './calendar-view.js';
 import { initRoster } from './roster-view.js';
 import { topFrequent, freqKey } from './freq.js';
+import { parseQty, partialPatch, progress, amount } from './partial.js';
 import { t, initLang, setLang, getLang, langInfo, LANGS, CATEGORY_IDS, CATEGORY_ICONS } from './i18n.js';
 import { ITEM_LANGS, prepareItem, translateTo, setFamilyDictionary, lookup } from './translate.js';
 import { compressImage, PHOTO_OPTS, THUMB_OPTS, MAX_PHOTOS } from './image.js';
@@ -694,6 +695,7 @@ function renderShell() {
     const item = state.items.find((i) => i.id === row.dataset.id);
     if (!item) return;
     if (e.target.closest('.more')) openEditItem(item);
+    else if (e.target.closest('.qty-btn')) openPartial(item);
     else if (e.target.closest('.thumb-btn')) openPhotos(item);
     else if (e.target.closest('.link-out')) return; // 由 <a> 自己處理
     else toggleItem(item);
@@ -786,9 +788,13 @@ function render() {
 function itemRow(i) {
   const { text, original, auto } = displayName(i);
   const wish = isWish(state.lists.find((l) => l.id === i.listId));
+  // 🛒 數量係數字：撳右邊個數量記「買咗幾多」
+  const countable = !i.done && !wish && !!parseQty(i.qty);
+  const prog = progress(i);
   const meta = i.done
     ? `${esc(t('boughtBy', { name: i.doneBy || '' }))} · ${esc(timeAgo(i.doneAt))}`
     : [
+        prog && `<span class="got">${esc(t('partialGot', { got: amount(prog.got, prog.unit), who: i.gotBy || '' }))}</span>`,
         i.price && `<span class="price">${esc(i.price)}</span>`,
         i.note && esc(i.note),
         !wish && i.forWho && esc(`🙋 ${t('forWhoLabel', { name: i.forWho })}`),
@@ -797,15 +803,21 @@ function itemRow(i) {
         .filter(Boolean)
         .join(' · ');
   const link = safeUrl(i.link);
-  return `<li class="item ${i.done ? 'done' : ''}" data-id="${esc(i.id)}">
+  return `<li class="item ${i.done ? 'done' : ''} ${prog ? 'partial' : ''}" data-id="${esc(i.id)}">
     <button class="toggle" aria-pressed="${!!i.done}">
       <span class="check" aria-hidden="true">✓</span>
       <span class="body">
-        <span class="name">${esc(text)}</span>${i.qty ? `<span class="qty">${esc(i.qty)}</span>` : ''}
+        <span class="name">${esc(text)}</span>${i.qty && !countable ? `<span class="qty">${esc(i.qty)}</span>` : ''}
+        ${prog ? `<span class="got-bar" aria-hidden="true"><i style="width:${Math.round((prog.got / prog.n) * 100)}%"></i></span>` : ''}
         ${original ? `<div class="original" lang="${esc(i.lang || 'zh')}">${esc(original)}${auto ? ` <span class="auto">${esc(t('autoTranslated'))}</span>` : ''}</div>` : ''}
         ${meta ? `<div class="meta">${meta}</div>` : ''}
       </span>
     </button>
+    ${
+      countable
+        ? `<button type="button" class="qty-btn" aria-label="${esc(t('partialBtn', { name: text }))}">${esc(prog ? t('partialLeft', { left: amount(prog.left, prog.unit) }) : i.qty)}</button>`
+        : ''
+    }
     ${link ? `<a class="icon-btn link-out" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(t('openLink'))}" title="${esc(t('openLink'))}">🔗</a>` : ''}
     ${
       i.thumb
@@ -982,7 +994,7 @@ function addByName(name, { qty = '', link = '' } = {}) {
   const item = same || newItem(name, { qty, link });
   if (same) {
     // 之前買過，放返入未買
-    state.store.updateItem(state.familyId, same.id, { done: false, doneBy: null, qty: qty || same.qty, addedBy: state.me }).catch(fail);
+    state.store.updateItem(state.familyId, same.id, { done: false, doneBy: null, got: 0, gotBy: '', qty: qty || same.qty, addedBy: state.me }).catch(fail);
   } else {
     state.store.addItem(state.familyId, item).catch(fail);
   }
@@ -1206,8 +1218,64 @@ function startVoice() {
 
 function toggleItem(item) {
   const done = !item.done;
-  state.store.updateItem(state.familyId, item.id, { done, doneBy: done ? state.me : null }).catch(fail);
+  const patch = { done, doneBy: done ? state.me : null };
+  if (item.got) Object.assign(patch, { got: 0, gotBy: '' });
+  state.store.updateItem(state.familyId, item.id, patch).catch(fail);
   if (navigator.vibrate) navigator.vibrate(10);
+}
+
+// 🛒 買咗一部分：8件淨係買到 5件 → 「仲差 3件」，其他人即時見到；買夠就當買晒
+function openPartial(item) {
+  const q = parseQty(item.qty);
+  if (!q) return;
+  const name = displayName(item).text;
+  const step = Number.isInteger(q.n) ? 1 : 0.5;
+  openDialog(
+    `<form id="partial-form">
+      <h2>${esc(t('partialTitle', { name }))}</h2>
+      <p class="muted">${esc(t('partialNeed', { qty: item.qty }))}</p>
+      <div class="row partial-row">
+        <button type="button" class="btn icon-square" data-step="-1" aria-label="−">−</button>
+        <input class="input partial-input" name="got" type="number" inputmode="decimal" min="0" max="${q.n}" step="${step}" value="${item.got || ''}" placeholder="0" aria-label="${esc(t('partialTitle', { name }))}">
+        <button type="button" class="btn icon-square" data-step="1" aria-label="+">＋</button>
+        <span class="partial-unit">/ ${esc(amount(q.n, q.unit))}</span>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn" id="partial-all">✓ ${esc(t('partialAll'))}</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>${esc(t('cancel'))}</button>
+        <button class="btn primary">${esc(t('save'))}</button>
+      </div>
+    </form>`,
+    (dlg) => {
+      const form = $('#partial-form', dlg);
+      const input = form.got;
+      dlg.querySelectorAll('[data-step]').forEach(
+        (b) =>
+          (b.onclick = () => {
+            const v = Math.min(q.n, Math.max(0, (Number(input.value) || 0) + Number(b.dataset.step) * step));
+            input.value = String(v);
+          }),
+      );
+      const save = (got) => {
+        dlg.close();
+        const before = { done: !!item.done, doneBy: item.doneBy || null, got: item.got || 0, gotBy: item.gotBy || '' };
+        const patch = partialPatch(item, got, state.me);
+        state.store.updateItem(state.familyId, item.id, patch).catch(fail);
+        const left = patch.done ? 0 : q.n - (patch.got || 0);
+        toast(patch.done ? t('partialDone', { name }) : patch.got ? t('partialSaved', { name, left: amount(left, q.unit) }) : t('saved'), {
+          label: t('undo'),
+          run: () => state.store.updateItem(state.familyId, item.id, before).catch(fail),
+        });
+      };
+      $('#partial-all', dlg).onclick = () => save(q.n);
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        save(input.value);
+      };
+      setTimeout(() => input.select(), 50);
+    },
+  );
 }
 
 function deleteItem(item) {
