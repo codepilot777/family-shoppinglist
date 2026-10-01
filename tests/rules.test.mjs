@@ -177,6 +177,18 @@ await test('inbox: registered device can add/read/delete pending receipts; no up
   await assertSucceeds(deleteDoc(doc(db('carol'), ref.path)));
 });
 
+await test('items: partial purchase fields validated', async () => {
+  const col = collection(db('carol'), `families/${FID}/items`);
+  const ref = await addDoc(col, { ...item, qty: '8件' });
+  await assertSucceeds(updateDoc(doc(db('carol'), ref.path), { got: 5, gotBy: 'Siti', gotAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(db('carol'), ref.path), { got: 1.5 }));
+  await assertSucceeds(updateDoc(doc(db('carol'), ref.path), { got: 0, gotBy: '', gotAt: null }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { got: -1 }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { got: '5' }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { gotAt: 'today' }));
+  await assertFails(updateDoc(doc(db('carol'), ref.path), { gotBy: 'x'.repeat(21) }));
+});
+
 await test('chores: valid chore saved/updated; bad schedule, extra fields and removed devices rejected', async () => {
   const col = (uid) => collection(db(uid), `families/${FID}/chores`);
   const ok = { name: '換床單', lang: 'zh', tr: { zh: '換床單' }, trAuto: {}, every: 1, unit: 'week', start: '2026-09-28', due: '2026-09-28', who: 'm1', note: '', by: 'Siti', createdAt: serverTimestamp() };

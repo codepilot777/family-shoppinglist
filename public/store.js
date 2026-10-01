@@ -84,7 +84,7 @@ async function createFirebaseStore(firebaseConfig) {
   const readDocs = (snap) =>
     snap.docs.map((d) => {
       const data = d.data({ serverTimestamps: 'estimate' });
-      return { ...data, id: d.id, createdAt: toMillis(data.createdAt), doneAt: data.doneAt ? toMillis(data.doneAt) : null };
+      return { ...data, id: d.id, createdAt: toMillis(data.createdAt), doneAt: data.doneAt ? toMillis(data.doneAt) : null, gotAt: data.gotAt ? toMillis(data.gotAt) : null };
     });
 
   const registerDevice = (fid, code, info) =>
@@ -427,6 +427,7 @@ async function createFirebaseStore(firebaseConfig) {
     updateItem(fid, iid, patch) {
       const data = { ...patch };
       if ('done' in data) data.doneAt = data.done ? fb.serverTimestamp() : null;
+      if ('got' in data) data.gotAt = data.got > 0 ? fb.serverTimestamp() : null;
       return fb.updateDoc(fb.doc(itemsCol(fid), iid), data);
     },
 
@@ -934,6 +935,7 @@ function createLocalStore() {
       const it = fam(fid).items[iid];
       Object.assign(it, patch);
       if ('done' in patch) it.doneAt = patch.done ? Date.now() : null;
+      if ('got' in patch) it.gotAt = patch.got > 0 ? Date.now() : null;
       save();
     },
 

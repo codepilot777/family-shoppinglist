@@ -169,8 +169,11 @@ function recentBought(who = state().me, at = Date.now()) {
   const recorded = new Set(
     entries.filter((e) => e.type === 'expense' && e.by === who && (e.createdAt || 0) >= since).flatMap((e) => e.items || []),
   );
+  const inWindow = (at) => at >= since && at <= until;
   const mine = state().items.filter(
-    (i) => i.done && i.doneAt >= since && i.doneAt <= until && i.doneBy === who && !recorded.has(i.name),
+    (i) =>
+      !recorded.has(i.name) &&
+      ((i.done && inWindow(i.doneAt) && i.doneBy === who) || (!i.done && i.got > 0 && inWindow(i.gotAt) && i.gotBy === who)), // 連買咗一部分嘅
   );
   return [...new Set(mine.map((i) => i.name))];
 }

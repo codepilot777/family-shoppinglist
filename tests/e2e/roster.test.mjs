@@ -13,21 +13,25 @@ export default async function ({ device }) {
 
   // 聽日 11:30 出門去 LAX，後日早上返；大後日 SIM 14:00–20:00；再之後 reserve
   const [d1, d2, d3, d4, d5] = [1, 2, 3, 4, 5].map(hk);
+  // 國泰 roster 嘅 SUMMARY 以「05-Oct」開頭
+  const tag = (d) => `${d.slice(8)}-${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].at(Number(d.slice(5, 7)) - 1)}`;
   const ics = tmpFile(
     'roster.ics',
     makeIcs([
-      { sum: `X CX 100 HKG-LAX`, s: `${d1}T11:30`, e: `${d1}T23:00` },
-      { sum: `X CX 101 LAX-HKG`, s: `${d2}T20:00`, e: `${d3}T06:00` },
-      { sum: 'X S1514  MW', s: `${d4}T14:00`, e: `${d4}T20:00` },
-      { sum: 'X AR8 ', s: `${d5}T09:10`, e: `${d5}T10:10` },
-      { sum: 'X O ', day: hk(0) },
+      { sum: `${tag(d1)} CX 100 HKG-LAX`, s: `${d1}T11:30`, e: `${d1}T23:00` },
+      { sum: `${tag(d2)} CX 101 LAX-HKG`, s: `${d2}T20:00`, e: `${d3}T06:00` },
+      { sum: `${tag(d4)} S1514  MW`, s: `${d4}T14:00`, e: `${d4}T20:00` },
+      { sum: `${tag(d5)} AR8 `, s: `${d5}T09:10`, e: `${d5}T10:10` },
+      { sum: `${tag(hk(0))} O `, day: hk(0) },
     ]),
   );
   await openCalendar(pilot);
   await importRosterFile(pilot, ics, '#roster-form');
   assert.equal(await pilot.locator('#roster-form input[name="member"]:checked + span').textContent(), '爸爸');
   const preview = await text(pilot, '.roster-away');
-  for (const d of [d1, d2, d4]) assert.ok(preview.includes(String(Number(d.slice(8)))), `preview lists ${d}: ${preview}`);
+  const listed = (preview.match(/\d+/g) || []).map(Number);
+  for (const d of [d1, d2, d4]) assert.ok(listed.includes(Number(d.slice(8))), `preview lists ${d}: ${preview}`);
+  assert.ok(!listed.includes(Number(d5.slice(8))), `reserve day not away: ${preview}`);
   await pilot.click('#roster-form .btn.primary');
   assert.ok((await calendarDay(pilot, d1)).some((r) => r.includes('爸爸') && r.includes('LAX')));
   assert.ok((await calendarDay(pilot, d3)).some((r) => r.includes('🏠')), 'back home row');

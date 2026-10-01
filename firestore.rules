@@ -160,7 +160,7 @@ service cloud.firestore {
         && familyExists(familyId)
         && request.resource.data.keys().hasOnly(
              ['listId', 'name', 'lang', 'tr', 'trAuto', 'qty', 'note', 'category', 'addedBy', 'done', 'doneBy', 'doneAt', 'createdAt',
-              'forWho', 'price', 'link', 'photos', 'thumb'])
+              'forWho', 'price', 'link', 'photos', 'thumb', 'got', 'gotBy', 'gotAt'])
         && shortString(request.resource.data.listId, 40)
         && shortString(request.resource.data.name, 60)
         && request.resource.data.name.size() > 0
@@ -177,7 +177,13 @@ service cloud.firestore {
         && shortString(request.resource.data.get('link', ''), 500)
         && request.resource.data.get('photos', []) is list
         && request.resource.data.get('photos', []).size() <= 3
-        && shortString(request.resource.data.get('thumb', ''), 30000);
+        && shortString(request.resource.data.get('thumb', ''), 30000)
+        // 🛒 買咗一部分：got = 買咗幾多（數量開頭嘅數字）
+        && request.resource.data.get('got', 0) is number
+        && request.resource.data.get('got', 0) >= 0
+        && request.resource.data.get('got', 0) <= 100000
+        && shortString(request.resource.data.get('gotBy', ''), 20)
+        && (request.resource.data.get('gotAt', null) == null || request.resource.data.gotAt is timestamp);
     }
 
     // 相片：壓縮後嘅 JPEG（data URL），唔使 Firebase Storage
